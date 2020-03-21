@@ -3,6 +3,10 @@ name = "batched-fn"
 version = "0.1.0"
 authors = ["epwalsh <epwalsh10@gmail.com>"]
 edition = "2018"
+license = "Apache-2.0"
+repository = "https://github.com/epwalsh/batched-fn"
+homepage = "https://github.com/epwalsh/batched-fn"
+description = "A macro for batched processing"
 
 [lib]
 name = "batched_fn"
