@@ -20,4 +20,4 @@ tokio = { version = "0.2.13", features = ["sync", "time", "rt-core"] }
 once_cell = { version = "1.3.1" }
 
 [dev-dependencies]
-tokio = { version = "*", features = ["sync", "time", "rt-threaded", "macros"] }
+tokio = { version = "0.2.13", features = ["sync", "time", "rt-threaded", "macros"] }
