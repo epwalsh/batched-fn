@@ -214,10 +214,6 @@ where
 
         BatchedFn { tx }
     }
-
-    /// This is only used internally within the macro implementation to avoid warnings.
-    #[doc(hidden)]
-    pub fn touch(&mut self) {}
 }
 
 /// A `BatchedFn` is a wrapper around a `handler` that provides the interface for
@@ -258,10 +254,6 @@ macro_rules! __batch_fn_internal {
         async fn call(input: <$batch_input_type as $crate::Batch>::Item) -> <$batch_output_type as $crate::Batch>::Item {
             let batched_fn_wrapper = BATCHED_FN.get_or_init(|| {
                 let mut builder = $crate::BatchedFnBuilder::new(|$batch: $batch_input_type| -> $batch_output_type { $fn_body });
-
-                // This is purely so we don't get a warning "builder does not need to be mutable"
-                // if there aren't any other settings given.
-                builder.touch();
 
                 $(
                     builder = builder.$setting($value);
