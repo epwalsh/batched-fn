@@ -69,7 +69,7 @@
 extern crate once_cell;
 
 #[doc(hidden)]
-pub use once_cell::sync::OnceCell;
+pub use once_cell::sync::Lazy;
 
 use std::marker;
 use tokio::sync::mpsc::{self, Sender};
@@ -107,6 +107,11 @@ impl<T> Batch for Vec<T> {
     fn push(&mut self, item: T) {
         self.push(item);
     }
+}
+
+pub trait BatchFn {
+    type Input: Batch;
+    type Output: Batch;
 }
 
 /// A `BatchedFnBuilder` is used to created a `BatchedFn`.
@@ -248,11 +253,8 @@ macro_rules! __batch_fn_internal {
         |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block,
         $( $setting:ident = $value:expr, )*
     ) => {{
-        static BATCHED_FN: $crate::OnceCell<$crate::BatchedFn<<$batch_input_type as $crate::Batch>::Item, <$batch_output_type as $crate::Batch>::Item>> =
-            $crate::OnceCell::new();
-
-        async fn call(input: <$batch_input_type as $crate::Batch>::Item) -> <$batch_output_type as $crate::Batch>::Item {
-            let batched_fn_wrapper = BATCHED_FN.get_or_init(|| {
+        static BATCHED_FN: $crate::Lazy<$crate::BatchedFn<<$batch_input_type as $crate::Batch>::Item, <$batch_output_type as $crate::Batch>::Item>> =
+            $crate::Lazy::new(|| {
                 let mut builder = $crate::BatchedFnBuilder::new(|$batch: $batch_input_type| -> $batch_output_type { $fn_body });
 
                 $(
@@ -262,10 +264,7 @@ macro_rules! __batch_fn_internal {
                 builder.build()
             });
 
-            batched_fn_wrapper.evaluate_in_batch(input).await
-        }
-
-        call
+        |input| { BATCHED_FN.evaluate_in_batch(input) }
     }};
 }
 
