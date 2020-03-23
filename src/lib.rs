@@ -109,11 +109,6 @@ impl<T> Batch for Vec<T> {
     }
 }
 
-pub trait BatchFn {
-    type Input: Batch;
-    type Output: Batch;
-}
-
 /// A `BatchedFnBuilder` is used to created a `BatchedFn`.
 #[doc(hidden)]
 pub struct BatchedFnBuilder<T, R, F, BT, BR>
