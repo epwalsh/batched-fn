@@ -15,7 +15,7 @@
 //! Even though inputs come individually - and outputs need to be served back individually - it
 //! is usually more efficient to process a group of inputs together in order to fully utilize the GPU.
 //!
-//! In this case the model API might looks like this:
+//! In this case the model API might look like this:
 //!
 //! ```rust
 //! // For lazily loading a static reference to a model instance.
@@ -111,7 +111,7 @@
 //!
 //! ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 //!
-//! We can also easily tune the maximum batch size and wait delay:
+//! You can also easily tune the maximum batch size and wait delay:
 //!
 //! ```rust
 //! # use once_cell::sync::Lazy;
