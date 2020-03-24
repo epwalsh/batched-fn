@@ -50,7 +50,7 @@
 //!     }
 //! }
 //!
-//! static MODEL: Lazy<Model> = Lazy::new(|| Model::load());
+//! static MODEL: Lazy<Model> = Lazy::new(Model::load);
 //! ```
 //!
 //! Without `batched-fn`, the webserver route would need to call `Model::predict` on each
