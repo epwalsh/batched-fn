@@ -22,65 +22,116 @@
 `batched-fn` provides a macro that can be used to easily a wrap a function that runs on
 batches of inputs in such a way that it can be called with
 a single input, yet where that single input is run as part of a batch of other inputs behind
-the scenes. This is useful when you have a high throughput application where processing inputs in a batch
-is more efficient that processing inputs one-by-one.
+the scenes.
 
-Consider, for example, a GPU-backed deep learning model deployed on a webserver that provides
-a prediction for each input that comes in through an HTTP request. Even though inputs come
-individually - and outputs need to be served back individually - it is more efficient to process
-a group of inputs together in order to fully utilize the GPU.
+This is useful when you have a high throughput application where processing inputs in a batch
+is more efficient that processing inputs one-by-one. The trade-off  is a small delay that is incurred
+while waiting for a batch to be filled, though this can be tuned with the
+`delay` and `max_batch_size` parameters.
 
-Here `batched-fn` could be dropped in to allow batched processing of inputs without changing
-the one-to-one relationship of inputs to outputs. The trade-off  is a small delay that is incurred
-while waiting for a batch to be filled, though this can be tuned with the `delay` parameter.
+A typical use-case is when you have a GPU-backed deep learning model deployed on a webserver that provides
+a prediction for each input that comes in through an HTTP request.
 
-## Examples
+Even though inputs come individually - and outputs need to be served back individually - it
+is usually more efficient to process a group of inputs together in order to fully utilize the GPU.
 
-⚠️ *These examples are obviously contrived and wouldn't be practical since there is no gain here
-from processing inputs in a batch.*
-
-Suppose we want a public API that allows a user to double a single number, but for some reason
-its more efficient to double a batch of numbers together. Without batching we could just have
-a simple function like this:
+In this case the model API might looks like this:
 
 ```rust
-fn double(x: i32) -> i32 {
-    x * 2
+// For lazily loading a static reference to a model instance.
+use once_cell::sync::Lazy;
+
+// `Batch` could be anything that implements the `batched_fn::Batch` trait.
+type Batch<T> = Vec<T>;
+
+#[derive(Debug)]
+struct Input {
+    // ...
+}
+
+#[derive(Debug)]
+struct Output {
+    // ...
+}
+
+struct Model {
+    // ...
+}
+
+impl Model {
+    fn predict(&self, batch: Batch<Input>) -> Batch<Output> {
+        // ...
+        # batch.iter().map(|_| Output {}).collect()
+    }
+
+    fn load() -> Self {
+        // ...
+    }
+}
+
+static MODEL: Lazy<Model> = Lazy::new(|| Model::load());
+```
+
+Without `batched-fn`, the webserver route would need to call `Model::predict` on each
+individual input which would result in a bottleneck from under-utilizing the GPU:
+
+```rust
+fn predict_for_http_request(input: Input) -> Output {
+    let mut batched_input = Batch::with_capacity(1);
+    batched_input.push(input);
+    MODEL.predict(batched_input).pop().unwrap()
 }
 ```
 
-But adding batching behind the scenes is as simple as dropping the `batched_fn` macro
-in the function body:
+But by dropping the `batched_fn` macro into this function, you automatically get batched
+inference behind the scenes without changing the one-to-one relationship between inputs and
+outputs:
 
 ```rust
-async fn double(x: i32) -> i32 {
-    let batched_double = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> {
-            batch.iter().map(|batch_i| batch_i * 2).collect()
-        }
+async fn predict_for_http_request(input: Input) -> Output {
+    let batch_predict = batched_fn! {
+        |batch: Batch<Input>| -> Batch<Output> {
+            MODEL.predict(batch)
+        },
     };
-    batched_double(x).await
+    batch_predict(input).await
 }
 ```
 
-❗️ *Note that the `double` function now has to be `async`.*
+❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 
-We can also adjust the maximum batch size and tune the wait delay.
+We can also easily tune the maximum batch size and wait delay:
 
-Here we set the `max_batch_size` to 4 and `delay` to 50 milliseconds. This means
-the batched function will wait at most 50 milliseconds after receiving a single
+```rust
+async fn predict_for_http_request(input: Input) -> Output {
+    let batch_predict = batched_fn! {
+        |batch: Batch<Input>| -> Batch<Output> {
+            MODEL.predict(batch)
+        },
+        delay = 50,
+        max_batch_size = 4,
+    };
+    batch_predict(input).await
+}
+```
+
+Here we set the `max_batch_size` to 4 and `delay`
+to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 input to fill a batch of 4. If 3 more inputs are not received within 50 milliseconds
 then the partial batch will be ran as-is.
 
-```rust
-async fn double(x: i32) -> i32 {
-    let batched_double = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> {
-            batch.iter().map(|batch_i| batch_i * 2).collect()
-        },
-        max_batch_size = 4,
-        delay = 50,
-    };
-    batched_double(x).await
+## Caveats
+
+The examples above suggest that you could do this:
+
+```rust,compile_fail
+async fn predict_for_http_request(input: Input) -> Output {
+    let batch_predict = batched_fn! { MODEL.predict };
+    batch_predict(input).await
 }
 ```
+
+However if you try compiling this example you'll get an error that says "no rules expected this
+token in macro call". This form is not allowed because it is currently not possible to infer
+the input and output types unless they are explicity given. Therefore you must always express
+the handler as a closure like above.
