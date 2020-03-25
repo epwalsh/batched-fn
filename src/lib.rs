@@ -176,6 +176,18 @@
 //! token in macro call". This form is not allowed because it is currently not possible to infer
 //! the input and output types unless they are explicity given. Therefore you must always express
 //! the handler as a closure like above.
+//!
+//! # Tuning max batch size and delay
+//!
+//! The optimal batch size and delay will depend on the specifics of your use case, such as how big of a batch you can fit in memory
+//! (typically on the order of 8, 16, 32, or 64 for a deep learning model) and how long of a delay you can afford.
+//! In general you want to set both of these as high as you can.
+//!
+//! It's worth noting that the response time of your application might actually go *down* under high load.
+//! This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `delay` milliseconds
+//! has passed, whichever happens first.
+//! So under high load batches will be filled quickly, but under low load the response time will be at least `delay` milliseconds (adding the time
+//! it takes to actually process a batch and respond).
 
 extern crate once_cell;
 
