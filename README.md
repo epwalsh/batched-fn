@@ -108,15 +108,15 @@ async fn predict_for_http_request(input: Input) -> Output {
             MODEL.predict(batch)
         },
         delay = 50,
-        max_batch_size = 4,
+        max_batch_size = 16,
     };
     batch_predict(input).await
 }
 ```
 
-Here we set the `max_batch_size` to 4 and `delay`
+Here we set the `max_batch_size` to 16 and `delay`
 to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
-input to fill a batch of 4. If 3 more inputs are not received within 50 milliseconds
+input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 then the partial batch will be ran as-is.
 
 ## Caveats
@@ -134,3 +134,15 @@ However if you try compiling this example you'll get an error that says "no rule
 token in macro call". This form is not allowed because it is currently not possible to infer
 the input and output types unless they are explicity given. Therefore you must always express
 the handler as a closure like above.
+
+## Tuning max batch size and delay
+
+The optimal batch size and delay will depend on the specifics of your use case, such as how big of a batch you can fit in memory
+(typically on the order of 8, 16, 32, or 64 for a deep learning model) and how long of a delay you can afford.
+In general you want to set both of these as high as you can.
+
+It's worth noting that the response time of your application might actually go *down* under high load.
+This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `delay` milliseconds
+has passed, whichever happens first.
+So under high load batches will be filled quickly, but under low load the response time will be at least `delay` milliseconds (adding the time
+it takes to actually process a batch and respond).

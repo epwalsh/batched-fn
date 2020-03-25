@@ -135,15 +135,15 @@
 //!             MODEL.predict(batch)
 //!         },
 //!         delay = 50,
-//!         max_batch_size = 4,
+//!         max_batch_size = 16,
 //!     };
 //!     batch_predict(input).await
 //! }
 //! ```
 //!
-//! Here we set the [`max_batch_size`](macro.batch.html#max_batch_size) to 4 and [`delay`](macro.batched_fn.html#delay)
+//! Here we set the [`max_batch_size`](macro.batch.html#max_batch_size) to 16 and [`delay`](macro.batched_fn.html#delay)
 //! to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
-//! input to fill a batch of 4. If 3 more inputs are not received within 50 milliseconds
+//! input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 //! then the partial batch will be ran as-is.
 //!
 //! # Caveats
