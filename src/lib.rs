@@ -236,6 +236,10 @@ macro_rules! __batch_fn_internal {
                     $fn_body
                 };
 
+                // Set config vars.
+                let max_batch_size: usize = $max_batch_size;
+                let delay: u128 = $delay;
+
                 // Initialize handler context.
                 struct Context {
                     $( $ctx_arg: $ctx_arg_ty, )*
@@ -248,13 +252,13 @@ macro_rules! __batch_fn_internal {
                 // Wait for an input.
                 while let Ok((input, result_tx)) = rx.recv() {
                     let mut batch_input =
-                        <$batch_input_type as $crate::Batch>::with_capacity($max_batch_size);
-                    let mut batch_txs = Vec::with_capacity($max_batch_size);
+                        <$batch_input_type as $crate::Batch>::with_capacity(max_batch_size);
+                    let mut batch_txs = Vec::with_capacity(max_batch_size);
                     batch_input.push(input);
                     batch_txs.push(result_tx);
 
-                    let mut vacancy = $max_batch_size - 1;
-                    let mut time_left = $delay as u64;
+                    let mut vacancy = max_batch_size - 1;
+                    let mut time_left = delay as u64;
                     let start = std::time::Instant::now();
 
                     // While there is still room in the batch we'll wait at most `delay`
@@ -267,10 +271,10 @@ macro_rules! __batch_fn_internal {
                             batch_txs.push(next_result_tx);
                             vacancy -= 1;
                             let elapsed = start.elapsed().as_millis();
-                            time_left = if elapsed > $delay {
+                            time_left = if elapsed > delay {
                                 0
                             } else {
-                                ($delay - elapsed) as u64
+                                (delay - elapsed) as u64
                             };
                         } else {
                             break;
@@ -329,7 +333,28 @@ macro_rules! batched_fn {
         };
         context = {
             $( $ctx:ident: $ctx_init:expr ),* $(,)?
+        } $(;)?
+    ) => {
+        $crate::__batch_fn_internal!(
+            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body;
+            config = {
+                max_batch_size: $max_batch_size,
+                delay: $delay,
+            };
+            context = {
+                $( $ctx: $ctx_init ),*
+            };
+        );
+    };
+    (
+        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            delay: $delay:expr,
+            max_batch_size: $max_batch_size:expr $(,)?
         };
+        context = {
+            $( $ctx:ident: $ctx_init:expr ),* $(,)?
+        } $(;)?
     ) => {
         $crate::__batch_fn_internal!(
             handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body;
