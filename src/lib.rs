@@ -65,7 +65,7 @@
 //! individual input which would result in a bottleneck from under-utilizing the GPU:
 //!
 //! ```rust
-//! # use once_cell::sync::Lazy;
+//! use once_cell::sync::Lazy;
 //! # use batched_fn::{batched_fn, Batch as BatchTrait};
 //! # type Batch<T> = Vec<T>;
 //! # #[derive(Debug)]
