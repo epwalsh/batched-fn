@@ -6,7 +6,6 @@
 
 // For lazily loading a static reference to a model instance.
 use batched_fn::batched_fn;
-use once_cell::sync::Lazy;
 use tokio::time::{self, Duration};
 
 // `Batch` could be anything that implements the `batched_fn::Batch` trait.
@@ -31,13 +30,25 @@ impl Model {
     }
 }
 
-// Load a model instance.
-static MODEL: Lazy<Model> = Lazy::new(Model::load);
+// This provides any context the batched function handler needs.
+struct ModelContext {
+    model: Model,
+}
+
+// `ModelContext` needs to implement `Default` so that the batched fn
+// knows how to initialize it.
+impl Default for ModelContext {
+    fn default() -> Self {
+        Self {
+            model: Model::load(),
+        }
+    }
+}
 
 async fn predict_for_single_input(input: Input) -> Output {
     let batch_predict = batched_fn! {
-        |batch: Batch<Input>| -> Batch<Output> {
-            let output = MODEL.predict(batch.clone());
+        |batch: Batch<Input>, ctx: &ModelContext| -> Batch<Output> {
+            let output = ctx.model.predict(batch.clone());
             println!("Processed batch {:?} -> {:?}", batch, output);
             output
         },
@@ -52,7 +63,8 @@ async fn main() {
     let mut handles = vec![];
 
     handles.push(tokio::spawn(async move {
-        predict_for_single_input(0).await;
+        let o = predict_for_single_input(0).await;
+        println!("0 -> {}", o);
     }));
 
     // Pause for a moment before firing off some more tasks.
@@ -60,7 +72,8 @@ async fn main() {
 
     for i in 1..10 {
         handles.push(tokio::spawn(async move {
-            predict_for_single_input(i).await;
+            let o = predict_for_single_input(i).await;
+            println!("{} -> {}", i, o);
         }));
     }
 

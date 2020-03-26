@@ -38,9 +38,6 @@ is usually more efficient to process a group of inputs together in order to full
 In this case the model API might look like this:
 
 ```rust
-// For lazily loading a static reference to a model instance.
-use once_cell::sync::Lazy;
-
 // `Batch` could be anything that implements the `batched_fn::Batch` trait.
 type Batch<T> = Vec<T>;
 
@@ -68,13 +65,28 @@ impl Model {
     }
 }
 
-static MODEL: Lazy<Model> = Lazy::new(Model::load);
+// This provides any context the batched function handler needs.
+struct ModelContext {
+    model: Model,
+}
+
+// `ModelContext` needs to implement `Default` so that the batched fn
+// knows how to initialize it.
+impl Default for ModelContext {
+    fn default() -> Self {
+        Self { model: Model::load() }
+    }
+}
 ```
 
 Without `batched-fn`, the webserver route would need to call `Model::predict` on each
 individual input which would result in a bottleneck from under-utilizing the GPU:
 
 ```rust
+use once_cell::sync::Lazy;
+
+static MODEL: Lazy<Model> = Lazy::new(Model::load);
+
 fn predict_for_http_request(input: Input) -> Output {
     let mut batched_input = Batch::with_capacity(1);
     batched_input.push(input);
@@ -89,23 +101,8 @@ outputs:
 ```rust
 async fn predict_for_http_request(input: Input) -> Output {
     let batch_predict = batched_fn! {
-        |batch: Batch<Input>| -> Batch<Output> {
-            MODEL.predict(batch)
-        },
-    };
-    batch_predict(input).await
-}
-```
-
-❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
-
-You can also easily tune the maximum batch size and wait delay:
-
-```rust
-async fn predict_for_http_request(input: Input) -> Output {
-    let batch_predict = batched_fn! {
-        |batch: Batch<Input>| -> Batch<Output> {
-            MODEL.predict(batch)
+        |batch: Batch<Input>, ctx: &ModelContext| -> Batch<Output> {
+            ctx.model.predict(batch)
         },
         delay = 50,
         max_batch_size = 16,
@@ -114,26 +111,12 @@ async fn predict_for_http_request(input: Input) -> Output {
 }
 ```
 
+❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
+
 Here we set the `max_batch_size` to 16 and `delay`
 to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 then the partial batch will be ran as-is.
-
-## Caveats
-
-The examples above suggest that you could do this:
-
-```rust,compile_fail
-async fn predict_for_http_request(input: Input) -> Output {
-    let batch_predict = batched_fn! { MODEL.predict };
-    batch_predict(input).await
-}
-```
-
-However if you try compiling this example you'll get an error that says "no rules expected this
-token in macro call". This form is not allowed because it is currently not possible to infer
-the input and output types unless they are explicity given. Therefore you must always express
-the handler as a closure like above.
 
 ## Tuning max batch size and delay
 
