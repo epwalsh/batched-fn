@@ -195,18 +195,9 @@ impl<T> Batch for Vec<T> {
     }
 }
 
-pub trait BatchedFnContext {
-    fn new() -> Self;
-}
-
 #[doc(hidden)]
+#[derive(Default)]
 pub struct EmptyContext {}
-
-impl BatchedFnContext for EmptyContext {
-    fn new() -> Self {
-        Self {}
-    }
-}
 
 /// A `BatchedFn` is a wrapper around a `handler` that provides the interface for
 /// evaluating a single input as part of a batch of other inputs.
@@ -261,7 +252,7 @@ macro_rules! __batch_fn_internal {
                 };
 
                 // Initialize handler context.
-                let ctx = <$ctx_type as $crate::BatchedFnContext>::new();
+                let ctx = <$ctx_type>::default();
 
                 // Wait for an input.
                 while let Ok((input, result_tx)) = rx.recv() {

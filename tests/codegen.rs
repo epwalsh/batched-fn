@@ -44,3 +44,42 @@ async fn test_with_options_diff_order_and_trailing_comma() {
         delay = 50,
     };
 }
+
+#[derive(Default)]
+struct Context {}
+
+#[tokio::test]
+async fn test_basic_invocation_with_ctx() {
+    let _ = batched_fn! {
+        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
+        delay = 50,
+        max_batch_size = 4
+    };
+}
+
+#[tokio::test]
+async fn test_basic_invocation_trailing_comma_with_ctx() {
+    let _ = batched_fn! {
+        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
+        delay = 50,
+        max_batch_size = 4,
+    };
+}
+
+#[tokio::test]
+async fn test_with_options_diff_order_with_ctx() {
+    let _ = batched_fn! {
+        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
+        max_batch_size = 4,
+        delay = 50
+    };
+}
+
+#[tokio::test]
+async fn test_with_options_diff_order_and_trailing_comma_with_ctx() {
+    let _ = batched_fn! {
+        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
+        max_batch_size = 4,
+        delay = 50,
+    };
+}
