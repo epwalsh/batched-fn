@@ -252,6 +252,7 @@ macro_rules! __batch_fn_internal {
 
                 // Wait for an input.
                 while let Ok((input, result_tx)) = rx.recv() {
+                    // Start new batch with first input.
                     let mut batch_input =
                         <$batch_input_type as $crate::Batch>::with_capacity(max_batch_size);
                     let mut batch_txs = Vec::with_capacity(max_batch_size);
@@ -262,7 +263,7 @@ macro_rules! __batch_fn_internal {
                     let mut time_left = delay as u64;
                     let start = std::time::Instant::now();
 
-                    // While there is still room in the batch we'll wait at most `delay`
+                    // Now while there is still room in the batch we'll wait at most `delay`
                     // milliseconds to try to fill it.
                     while vacancy > 0 && time_left > 0 {
                         if let Ok((next_input, next_result_tx)) =
@@ -282,7 +283,12 @@ macro_rules! __batch_fn_internal {
                         }
                     }
 
+                    // We have a batch now (potentially not full). So send it through
+                    // the handler to get the batched output.
                     let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
+
+                    // Send results backed individually with each corresponding
+                    // channel sender.
                     for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
                         result_tx.send(output).unwrap();
                     }
