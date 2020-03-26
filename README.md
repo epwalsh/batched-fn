@@ -64,19 +64,6 @@ impl Model {
         // ...
     }
 }
-
-// This provides any context the batched function handler needs.
-struct ModelContext {
-    model: Model,
-}
-
-// `ModelContext` needs to implement `Default` so that the batched fn
-// knows how to initialize it.
-impl Default for ModelContext {
-    fn default() -> Self {
-        Self { model: Model::load() }
-    }
-}
 ```
 
 Without `batched-fn`, the webserver route would need to call `Model::predict` on each
@@ -101,11 +88,16 @@ outputs:
 ```rust
 async fn predict_for_http_request(input: Input) -> Output {
     let batch_predict = batched_fn! {
-        |batch: Batch<Input>, ctx: &ModelContext| -> Batch<Output> {
+        handler = |batch: Batch<Input>, model: &Model| -> Batch<Output> {
             ctx.model.predict(batch)
-        },
-        delay = 50,
-        max_batch_size = 16,
+        };
+        config = {
+            max_batch_size: 16,
+            delay: 50,
+        };
+        context = {
+            model = Model::load(),
+        };
     };
     batch_predict(input).await
 }

@@ -8,16 +8,19 @@ static TEST_RESULTS: Lazy<Mutex<Vec<TestResult>>> = Lazy::new(|| Mutex::new(vec!
 
 async fn double(x: i32) -> i32 {
     let batched = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> {
+        handler = |batch: Vec<i32>| -> Vec<i32> {
             let mut out = Vec::with_capacity(batch.len());
             for x in &batch {
                 out.push(x * 2);
             }
             TEST_RESULTS.lock().unwrap().push((batch, out.clone()));
             out
-        },
-        max_batch_size = 4,
-        delay = 50,
+        };
+        config = {
+            max_batch_size: 4,
+            delay: 50,
+        };
+        context = {};
     };
     batched(x).await
 }
