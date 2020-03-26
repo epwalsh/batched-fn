@@ -6,7 +6,7 @@
 //! This is useful when you have a high throughput application where processing inputs in a batch
 //! is more efficient that processing inputs one-by-one. The trade-off  is a small delay that is incurred
 //! while waiting for a batch to be filled, though this can be tuned with the
-//! [`delay`](macro.batched_fn.html#delay) and [`max_batch_size`](macro.batched_fn.html#max_batch_size)
+//! [`delay`](macro.batched_fn.html#config) and [`max_batch_size`](macro.batched_fn.html#config)
 //! parameters.
 //!
 //! A typical use-case is when you have a GPU-backed deep learning model deployed on a webserver that provides
@@ -112,7 +112,7 @@
 //!
 //! ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 //!
-//! Here we set the [`max_batch_size`](macro.batch.html#max_batch_size) to 16 and [`delay`](macro.batched_fn.html#delay)
+//! Here we set the [`max_batch_size`](macro.batch.html#config) to 16 and [`delay`](macro.batched_fn.html#config)
 //! to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 //! input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 //! then the partial batch will be ran as-is.
@@ -128,6 +128,18 @@
 //! has passed, whichever happens first.
 //! So under high load batches will be filled quickly, but under low load the response time will be at least `delay` milliseconds (adding the time
 //! it takes to actually process a batch and respond).
+//!
+//! # Implementation details
+//!
+//! When the `batched_fn` macro is invoked it spawns a new thread where the
+//! [`handler`](macro.batched_fn.html#hanlder) will
+//! be ran. Within that thread, every object specified in the [`context`](macro.batched_fn.html#context)
+//! is initialized and then passed by reference to the handler each time it is run.
+//!
+//! The object returned by the macro is just a closure that sends a single input and a callback
+//! through an asyncronous channel to the handler thread. When the handler finishes
+//! running a batch it invokes the callback corresponding to each input with the corresponding output,
+//! which triggers the closure to wake up and return the output.
 
 extern crate once_cell;
 extern crate tokio;
@@ -142,7 +154,7 @@ use std::sync::mpsc::Sender;
 use tokio::sync::mpsc as async_mpsc;
 
 /// The `Batch` trait is essentially an abstraction of `Vec<T>`. The input and output of a batch
-/// `handler` must implement `Batch`.
+/// [`handler`](macro.batched_fn.html#handler) must implement `Batch`.
 ///
 /// It represents an owned collection of ordered items of a single type.
 pub trait Batch: IntoIterator<Item = <Self as Batch>::Item> {
@@ -198,7 +210,6 @@ where
     pub fn new(tx: Sender<(T, UnboundedSender<R>)>) -> Self {
         Self { tx: Mutex::new(tx) }
     }
-
     /// Evaluate a single input as part of a batch of other inputs.
     pub async fn evaluate_in_batch(&self, input: T) -> R {
         let (result_tx, mut result_rx) = async_mpsc::unbounded_channel::<R>();
@@ -207,9 +218,79 @@ where
     }
 }
 
-#[doc(hidden)]
+/// Macro for creating a batched function.
+///
+/// This macro has 3 parameters: [`handler`](#handler), [`config`](#config), and
+/// [`context`](#context).
+///
+/// # Parameters
+///
+/// ### `handler`
+///
+/// The handler must be in the form of a closure declaration that takes a batch
+/// and any number of references to objects in the context as input and
+/// returns a different type of batch.
+///
+/// ### `config`
+///
+/// Within the config you must specify the `max_batch_size` and `delay`.
+///
+/// The batched function will wait at most `delay` milliseconds after receiving a single
+/// input to fill a batch of size `max_batch_size`. If enough inputs to fill a full batch
+/// are not received within `delay` milliseconds then the partial batch will be ran as-is.
+///
+/// ## `context`
+///
+/// Any additional reference that the handler takes as input must be defined within
+/// the context.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[macro_use] extern crate batched_fn;
+/// # use batched_fn::batched_fn;
+/// async fn double(x: i32) -> i32 {
+///     let batched_double = batched_fn! {
+///         handler = |batch: Vec<i32>| -> Vec<i32> {
+///             batch.into_iter().map(|x| x*2).collect()
+///         };
+///         config = {
+///             max_batch_size: 4,
+///             delay: 50,
+///         };
+///         context = {};
+///     };
+///
+///     batched_double(x).await
+/// }
+/// ```
+///
+/// You can also provide an arbitrary number of additional arguments to the handler by reference.
+/// All of the objects have to be initialized in the [`context`](#context):
+///
+/// ```rust
+/// # #[macro_use] extern crate batched_fn;
+/// # use batched_fn::batched_fn;
+///
+/// async fn multiply(x: i32) -> i32 {
+///     let batched_multiply = batched_fn! {
+///         handler = |batch: Vec<i32>, factor: &i32| -> Vec<i32> {
+///             batch.into_iter().map(|x| *factor * x ).collect()
+///         };
+///         config = {
+///             max_batch_size: 4,
+///             delay: 50,
+///         };
+///         context = {
+///             factor: 3,
+///         };
+///     };
+///
+///     batched_multiply(x).await
+/// }
+/// ```
 #[macro_export]
-macro_rules! __batch_fn_internal {
+macro_rules! batched_fn {
     (
         handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
         config = {
@@ -218,7 +299,7 @@ macro_rules! __batch_fn_internal {
         };
         context = {
             $( $ctx:ident: $ctx_init:expr ),* $(,)?
-        };
+        } $(;)?
     ) => {{
         static BATCHED_FN: $crate::Lazy<
             $crate::BatchedFn<
@@ -252,7 +333,6 @@ macro_rules! __batch_fn_internal {
 
                 // Wait for an input.
                 while let Ok((input, result_tx)) = rx.recv() {
-                    // Start new batch with first input.
                     let mut batch_input =
                         <$batch_input_type as $crate::Batch>::with_capacity(max_batch_size);
                     let mut batch_txs = Vec::with_capacity(max_batch_size);
@@ -263,7 +343,7 @@ macro_rules! __batch_fn_internal {
                     let mut time_left = delay as u64;
                     let start = std::time::Instant::now();
 
-                    // Now while there is still room in the batch we'll wait at most `delay`
+                    // While there is still room in the batch we'll wait at most `delay`
                     // milliseconds to try to fill it.
                     while vacancy > 0 && time_left > 0 {
                         if let Ok((next_input, next_result_tx)) =
@@ -283,12 +363,7 @@ macro_rules! __batch_fn_internal {
                         }
                     }
 
-                    // We have a batch now (potentially not full). So send it through
-                    // the handler to get the batched output.
                     let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
-
-                    // Send results backed individually with each corresponding
-                    // channel sender.
                     for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
                         result_tx.send(output).unwrap();
                     }
@@ -300,78 +375,4 @@ macro_rules! __batch_fn_internal {
 
         |input| BATCHED_FN.evaluate_in_batch(input)
     }};
-}
-
-/// Macro for creating a batched function.
-///
-/// This macro has 3 parameters: a `handler`, a `config`, and `context`.
-///
-/// ## `handler`
-///
-/// The handler must be in the form of a closure declaration that takes a batch
-/// and any number of references to objects in the context as input and
-/// outputs a different type of batch.
-///
-/// ### `config`
-///
-/// Within the config you must specify the `delay` and `max_batch_size`.
-///
-/// ### `delay`
-///
-/// This is the maximum number of milliseconds to wait for a batch to be filled after receiving
-/// a single input.
-///
-/// ### `max_batch_size`
-///
-/// This is the maximum batch size that will be passed to the batch `handler`. When a batch
-/// of this size is not filled before `delay` milliseconds the partial batch will be sent to the handler as-is.
-///
-/// ## `context`
-///
-/// Any additional reference that the handler takes as input must be defined within
-/// the context.
-#[macro_export]
-macro_rules! batched_fn {
-    (
-        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
-        config = {
-            max_batch_size: $max_batch_size:expr,
-            delay: $delay:expr $(,)?
-        };
-        context = {
-            $( $ctx:ident: $ctx_init:expr ),* $(,)?
-        } $(;)?
-    ) => {
-        $crate::__batch_fn_internal!(
-            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body;
-            config = {
-                max_batch_size: $max_batch_size,
-                delay: $delay,
-            };
-            context = {
-                $( $ctx: $ctx_init ),*
-            };
-        );
-    };
-    (
-        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
-        config = {
-            delay: $delay:expr,
-            max_batch_size: $max_batch_size:expr $(,)?
-        };
-        context = {
-            $( $ctx:ident: $ctx_init:expr ),* $(,)?
-        } $(;)?
-    ) => {
-        $crate::__batch_fn_internal!(
-            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body;
-            config = {
-                max_batch_size: $max_batch_size,
-                delay: $delay,
-            };
-            context = {
-                $( $ctx: $ctx_init ),*
-            };
-        );
-    };
 }
