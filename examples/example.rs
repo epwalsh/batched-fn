@@ -30,30 +30,20 @@ impl Model {
     }
 }
 
-// This provides any context the batched function handler needs.
-struct ModelContext {
-    model: Model,
-}
-
-// `ModelContext` needs to implement `Default` so that the batched fn
-// knows how to initialize it.
-impl Default for ModelContext {
-    fn default() -> Self {
-        Self {
-            model: Model::load(),
-        }
-    }
-}
-
 async fn predict_for_single_input(input: Input) -> Output {
     let batch_predict = batched_fn! {
-        |batch: Batch<Input>, ctx: &ModelContext| -> Batch<Output> {
-            let output = ctx.model.predict(batch.clone());
+        handler = |batch: Batch<Input>, model: &Model| -> Batch<Output> {
+            let output = model.predict(batch.clone());
             println!("Processed batch {:?} -> {:?}", batch, output);
             output
-        },
-        max_batch_size = 4,
-        delay = 50,
+        };
+        config = {
+            max_batch_size: 4,
+            delay: 50,
+        };
+        context = {
+            model: Model::load(),
+        };
     };
     batch_predict(input).await
 }

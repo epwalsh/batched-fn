@@ -46,19 +46,6 @@
 //!         # Self {}
 //!     }
 //! }
-//!
-//! // This provides any context the batched function handler needs.
-//! struct ModelContext {
-//!     model: Model,
-//! }
-//!
-//! // `ModelContext` needs to implement `Default` so that the batched fn
-//! // knows how to initialize it.
-//! impl Default for ModelContext {
-//!     fn default() -> Self {
-//!         Self { model: Model::load() }
-//!     }
-//! }
 //! ```
 //!
 //! Without `batched-fn`, the webserver route would need to call `Model::predict` on each
@@ -78,14 +65,6 @@
 //! #         batch.iter().map(|_| Output {}).collect()
 //! #     }
 //! #     fn load() -> Self { Self {} }
-//! # }
-//! # struct ModelContext {
-//! #     model: Model,
-//! # }
-//! # impl Default for ModelContext {
-//! #     fn default() -> Self {
-//! #         Self { model: Model::load() }
-//! #     }
 //! # }
 //! static MODEL: Lazy<Model> = Lazy::new(Model::load);
 //!
@@ -114,21 +93,18 @@
 //! #     }
 //! #     fn load() -> Self { Self {} }
 //! # }
-//! # struct ModelContext {
-//! #     model: Model,
-//! # }
-//! # impl Default for ModelContext {
-//! #     fn default() -> Self {
-//! #         Self { model: Model::load() }
-//! #     }
-//! # }
 //! async fn predict_for_http_request(input: Input) -> Output {
 //!     let batch_predict = batched_fn! {
-//!         |batch: Batch<Input>, ctx: &ModelContext| -> Batch<Output> {
-//!             ctx.model.predict(batch)
-//!         },
-//!         delay = 50,
-//!         max_batch_size = 16,
+//!         handler = |batch: Batch<Input>, model: &Model| -> Batch<Output> {
+//!             model.predict(batch)
+//!         };
+//!         config = {
+//!             max_batch_size: 16,
+//!             delay: 50,
+//!         };
+//!         context = {
+//!             model: Model::load(),
+//!         };
 //!     };
 //!     batch_predict(input).await
 //! }
@@ -234,9 +210,14 @@ where
 #[macro_export]
 macro_rules! __batch_fn_internal {
     (
-        |$batch:ident: $batch_input_type:ty, $ctx:ident: &$ctx_type:ty| -> $batch_output_type:ty $fn_body:block,
-        max_batch_size = $max_batch_size:expr,
-        delay = $delay:expr,
+        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            max_batch_size: $max_batch_size:expr,
+            delay: $delay:expr $(,)?
+        };
+        context = {
+            $( $ctx:ident: $ctx_init:expr ),* $(,)?
+        };
     ) => {{
         static BATCHED_FN: $crate::Lazy<
             $crate::BatchedFn<
@@ -251,12 +232,18 @@ macro_rules! __batch_fn_internal {
 
             std::thread::spawn(move || {
                 // Create handler closure.
-                let handler = |$batch: $batch_input_type, $ctx: &$ctx_type| -> $batch_output_type {
+                let handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type {
                     $fn_body
                 };
 
                 // Initialize handler context.
-                let ctx = <$ctx_type>::default();
+                struct Context {
+                    $( $ctx_arg: $ctx_arg_ty, )*
+                }
+
+                let context = Context {
+                    $( $ctx: $ctx_init, )*
+                };
 
                 // Wait for an input.
                 while let Ok((input, result_tx)) = rx.recv() {
@@ -290,7 +277,7 @@ macro_rules! __batch_fn_internal {
                         }
                     }
 
-                    let batch_output = handler(batch_input, &ctx);
+                    let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
                     for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
                         result_tx.send(output).unwrap();
                     }
@@ -306,71 +293,53 @@ macro_rules! __batch_fn_internal {
 
 /// Macro for creating a batched function.
 ///
-/// This macro has 3 parameters. The first parameter must be the batch `handler` closure.
-/// This is where the actual logic goes for handling a batch of inputs. The two other parameters
-/// are must be given by name: `delay` and `max_batch_size`.
+/// This macro has 3 parameters: a `handler`, a `config`, and `context`.
 ///
 /// ## `handler`
 ///
-/// The handler must be in the form of a closure declaration that takes a batch as input and
+/// The handler must be in the form of a closure declaration that takes a batch
+/// and any number of references to objects in the context as input and
 /// outputs a different type of batch.
 ///
-/// Optionally the closure can also take second argument: a reference to an arbitrary context struct, provided
-/// that struct implements `Default`.
+/// ### `config`
 ///
-/// ## `delay`
+/// Within the config you must specify the `delay` and `max_batch_size`.
+///
+/// ### `delay`
 ///
 /// This is the maximum number of milliseconds to wait for a batch to be filled after receiving
 /// a single input.
 ///
-/// ## `max_batch_size`
+/// ### `max_batch_size`
 ///
 /// This is the maximum batch size that will be passed to the batch `handler`. When a batch
 /// of this size is not filled before `delay` milliseconds the partial batch will be sent to the handler as-is.
+///
+/// ## `context`
+///
+/// Any additional reference that the handler takes as input must be defined within
+/// the context.
 #[macro_export]
 macro_rules! batched_fn {
     (
-        |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block,
-        max_batch_size = $max_batch_size:expr,
-        delay = $delay:expr $(,)?
+        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            max_batch_size: $max_batch_size:expr,
+            delay: $delay:expr $(,)?
+        };
+        context = {
+            $( $ctx:ident: $ctx_init:expr ),* $(,)?
+        };
     ) => {
         $crate::__batch_fn_internal!(
-            |$batch: $batch_input_type, _ctx: &$crate::EmptyContext| -> $batch_output_type $fn_body,
-            max_batch_size = $max_batch_size,
-            delay = $delay,
-        );
-    };
-    (
-        |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block,
-        delay = $delay:expr,
-        max_batch_size = $max_batch_size:expr $(,)?
-    ) => {
-        $crate::__batch_fn_internal!(
-            |$batch: $batch_input_type, _ctx: &$crate::EmptyContext| -> $batch_output_type $fn_body,
-            max_batch_size = $max_batch_size,
-            delay = $delay,
-        );
-    };
-    (
-        |$batch:ident: $batch_input_type:ty, $ctx:ident: &$ctx_type:ty| -> $batch_output_type:ty $fn_body:block,
-        max_batch_size = $max_batch_size:expr,
-        delay = $delay:expr $(,)?
-    ) => {
-        $crate::__batch_fn_internal!(
-            |$batch: $batch_input_type, $ctx: &$ctx_type| -> $batch_output_type $fn_body,
-            max_batch_size = $max_batch_size,
-            delay = $delay,
-        );
-    };
-    (
-        |$batch:ident: $batch_input_type:ty, $ctx:ident: &$ctx_type:ty| -> $batch_output_type:ty $fn_body:block,
-        delay = $delay:expr,
-        max_batch_size = $max_batch_size:expr $(,)?
-    ) => {
-        $crate::__batch_fn_internal!(
-            |$batch: $batch_input_type, $ctx: &$ctx_type| -> $batch_output_type $fn_body,
-            max_batch_size = $max_batch_size,
-            delay = $delay,
+            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body;
+            config = {
+                max_batch_size: $max_batch_size,
+                delay: $delay,
+            };
+            context = {
+                $( $ctx: $ctx_init ),*
+            };
         );
     };
 }

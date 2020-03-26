@@ -1,7 +1,6 @@
 use batched_fn::batched_fn;
 
 fn batch_double(batch: Vec<i32>) -> Vec<i32> {
-    println!("Processing batch {:?}", batch);
     let mut out = Vec::with_capacity(batch.len());
     for x in batch {
         out.push(x * 2);
@@ -9,77 +8,32 @@ fn batch_double(batch: Vec<i32>) -> Vec<i32> {
     out
 }
 
-#[tokio::test]
-async fn test_basic_invocation() {
+fn batch_multiply(batch: Vec<i32>, factor: i32) -> Vec<i32> {
+    batch.into_iter().map(|x| x * factor).collect()
+}
+
+#[test]
+fn test_basic_invocation() {
     let _ = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> { batch_double(batch) },
-        delay = 50,
-        max_batch_size = 4
+        handler = |batch: Vec<i32>| -> Vec<i32> { batch_double(batch) };
+        config = {
+            max_batch_size: 4,
+            delay: 50,
+        };
+        context = {};
     };
 }
 
-#[tokio::test]
-async fn test_basic_invocation_trailing_comma() {
+#[test]
+fn test_with_context() {
     let _ = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> { batch_double(batch) },
-        delay = 50,
-        max_batch_size = 4,
-    };
-}
-
-#[tokio::test]
-async fn test_with_options_diff_order() {
-    let _ = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> { batch_double(batch) },
-        max_batch_size = 4,
-        delay = 50
-    };
-}
-
-#[tokio::test]
-async fn test_with_options_diff_order_and_trailing_comma() {
-    let _ = batched_fn! {
-        |batch: Vec<i32>| -> Vec<i32> { batch_double(batch) },
-        max_batch_size = 4,
-        delay = 50,
-    };
-}
-
-#[derive(Default)]
-struct Context {}
-
-#[tokio::test]
-async fn test_basic_invocation_with_ctx() {
-    let _ = batched_fn! {
-        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
-        delay = 50,
-        max_batch_size = 4
-    };
-}
-
-#[tokio::test]
-async fn test_basic_invocation_trailing_comma_with_ctx() {
-    let _ = batched_fn! {
-        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
-        delay = 50,
-        max_batch_size = 4,
-    };
-}
-
-#[tokio::test]
-async fn test_with_options_diff_order_with_ctx() {
-    let _ = batched_fn! {
-        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
-        max_batch_size = 4,
-        delay = 50
-    };
-}
-
-#[tokio::test]
-async fn test_with_options_diff_order_and_trailing_comma_with_ctx() {
-    let _ = batched_fn! {
-        |batch: Vec<i32>, _ctx: &Context| -> Vec<i32> { batch_double(batch) },
-        max_batch_size = 4,
-        delay = 50,
+        handler = |batch: Vec<i32>, factor: &i32| -> Vec<i32> { batch_multiply(batch, *factor) };
+        config = {
+            max_batch_size: 4,
+            delay: 50,
+        };
+        context = {
+            factor: 3,
+        };
     };
 }
