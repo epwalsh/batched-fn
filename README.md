@@ -96,7 +96,7 @@ async fn predict_for_http_request(input: Input) -> Output {
             delay: 50,
         };
         context = {
-            model = Model::load(),
+            model: Model::load(),
         };
     };
     batch_predict(input).await
