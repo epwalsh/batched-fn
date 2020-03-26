@@ -198,6 +198,7 @@ where
     pub fn new(tx: Sender<(T, UnboundedSender<R>)>) -> Self {
         Self { tx: Mutex::new(tx) }
     }
+
     /// Evaluate a single input as part of a batch of other inputs.
     pub async fn evaluate_in_batch(&self, input: T) -> R {
         let (result_tx, mut result_rx) = async_mpsc::unbounded_channel::<R>();
