@@ -52,7 +52,8 @@ async fn main() {
     let mut handles = vec![];
 
     handles.push(tokio::spawn(async move {
-        predict_for_single_input(0).await;
+        let o = predict_for_single_input(0).await;
+        println!("0 -> {}", o);
     }));
 
     // Pause for a moment before firing off some more tasks.
@@ -60,7 +61,8 @@ async fn main() {
 
     for i in 1..10 {
         handles.push(tokio::spawn(async move {
-            predict_for_single_input(i).await;
+            let o = predict_for_single_input(i).await;
+            println!("{} -> {}", i, o);
         }));
     }
 

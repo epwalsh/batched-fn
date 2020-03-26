@@ -104,42 +104,14 @@
 //!         |batch: Batch<Input>| -> Batch<Output> {
 //!             MODEL.predict(batch)
 //!         },
-//!     };
-//!     batch_predict(input).await
-//! }
-//! ```
-//!
-//! ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
-//!
-//! You can also easily tune the maximum batch size and wait delay:
-//!
-//! ```rust
-//! # use once_cell::sync::Lazy;
-//! # use batched_fn::{batched_fn, Batch as BatchTrait};
-//! # type Batch<T> = Vec<T>;
-//! # #[derive(Debug)]
-//! # struct Input {}
-//! # #[derive(Debug)]
-//! # struct Output {}
-//! # struct Model {}
-//! # impl Model {
-//! #     fn predict(&self, batch: Batch<Input>) -> Batch<Output> {
-//! #         batch.iter().map(|_| Output {}).collect()
-//! #     }
-//! #     fn load() -> Self { Self {} }
-//! # }
-//! # static MODEL: Lazy<Model> = Lazy::new(|| Model::load());
-//! async fn predict_for_http_request(input: Input) -> Output {
-//!     let batch_predict = batched_fn! {
-//!         |batch: Batch<Input>| -> Batch<Output> {
-//!             MODEL.predict(batch)
-//!         },
 //!         delay = 50,
 //!         max_batch_size = 4,
 //!     };
 //!     batch_predict(input).await
 //! }
 //! ```
+//!
+//! ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 //!
 //! Here we set the [`max_batch_size`](macro.batch.html#max_batch_size) to 4 and [`delay`](macro.batched_fn.html#delay)
 //! to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
@@ -178,13 +150,16 @@
 //! the handler as a closure like above.
 
 extern crate once_cell;
+extern crate tokio;
 
 #[doc(hidden)]
 pub use once_cell::sync::Lazy;
 
-use std::marker;
-use tokio::sync::mpsc::{self, Sender};
-use tokio::time::{self, Duration, Instant};
+#[doc(hidden)]
+pub use tokio::sync::{mpsc::UnboundedSender, Mutex};
+
+use std::sync::mpsc::Sender;
+use tokio::sync::mpsc as async_mpsc;
 
 /// The `Batch` trait is essentially an abstraction of `Vec<T>`. The input and output of a batch
 /// `handler` must implement `Batch`.
@@ -220,123 +195,28 @@ impl<T> Batch for Vec<T> {
     }
 }
 
-/// A `BatchedFnBuilder` is used to created a `BatchedFn`.
-#[doc(hidden)]
-pub struct BatchedFnBuilder<T, R, F, BT, BR>
-where
-    T: 'static + Send + Sync + std::fmt::Debug,
-    R: 'static + Send + Sync + std::fmt::Debug,
-    F: 'static + Send + Sync + Fn(BT) -> BR,
-    BT: Send + Batch<Item = T>,
-    BR: Send + Batch<Item = R>,
-    <BR as IntoIterator>::IntoIter: Send,
-{
-    handler: F,
-    delay: u32,
-    max_batch_size: usize,
-    _marker: marker::PhantomData<(T, R, BT, BR)>,
+pub trait BatchedFnContext {
+    fn new() -> Self;
 }
 
-impl<T, R, F, BT, BR> BatchedFnBuilder<T, R, F, BT, BR>
-where
-    T: 'static + Send + Sync + std::fmt::Debug,
-    R: 'static + Send + Sync + std::fmt::Debug,
-    F: 'static + Send + Sync + Fn(BT) -> BR,
-    BT: Send + Batch<Item = T>,
-    BR: Send + Batch<Item = R>,
-    <BR as IntoIterator>::IntoIter: Send,
-{
-    /// Get a new `BatchedFnBuilder` with the given `handler`.
-    ///
-    /// The `handler` is the core of a `BatchedFn` and is responsible for the actual
-    /// logic that processes a batch of inputs.
-    pub fn new(handler: F) -> Self {
-        Self {
-            handler,
-            delay: 100,
-            max_batch_size: 10,
-            _marker: marker::PhantomData,
-        }
-    }
+#[doc(hidden)]
+pub struct EmptyContext {}
 
-    /// Set the maximum batch size.
-    ///
-    /// The `BatchedFn` will process at most this many elements in a batch.
-    pub fn max_batch_size(mut self, n: usize) -> Self {
-        self.max_batch_size = n;
-        self
-    }
-
-    /// Set the maximum delay in milliseconds to wait to fill a batch.
-    ///
-    /// Processing of a batch is only delayed when the batch cannot be filled
-    /// immediately. This is the trade-off with processing everything in a syncronous
-    /// one-at-a-time way.
-    pub fn delay(mut self, delay: u32) -> Self {
-        self.delay = delay;
-        self
-    }
-
-    /// Get a `BatchedFn` with the given handler and configuration.
-    pub fn build(self) -> BatchedFn<T, R> {
-        let (tx, mut rx) = mpsc::channel::<(T, Sender<R>)>(100);
-        let handler = self.handler;
-        let max_batch_size = self.max_batch_size;
-        let delay = self.delay as u128;
-
-        tokio::spawn(async move {
-            // Wait for an input.
-            while let Some((input, result_tx)) = rx.recv().await {
-                let mut batch_input = BT::with_capacity(max_batch_size);
-                let mut batch_txs = Vec::with_capacity(max_batch_size);
-                batch_input.push(input);
-                batch_txs.push(result_tx);
-
-                let mut vacancy = max_batch_size - 1;
-                let mut time_left = delay as u64;
-                let start = Instant::now();
-
-                // While there is still room in the batch we'll wait at most `delay`
-                // milliseconds to try to fill it.
-                while vacancy > 0 && time_left > 0 {
-                    if let Ok(Some((next_input, next_result_tx))) =
-                        time::timeout(Duration::from_millis(time_left), rx.recv()).await
-                    {
-                        batch_input.push(next_input);
-                        batch_txs.push(next_result_tx);
-                        vacancy -= 1;
-                        let elapsed = start.elapsed().as_millis();
-                        time_left = if elapsed > delay {
-                            0
-                        } else {
-                            (delay - elapsed) as u64
-                        };
-                    } else {
-                        break;
-                    }
-                }
-
-                let batch_output = handler(batch_input);
-                for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
-                    result_tx.send(output).await.unwrap();
-                }
-            }
-        });
-
-        BatchedFn { tx }
+impl BatchedFnContext for EmptyContext {
+    fn new() -> Self {
+        Self {}
     }
 }
 
 /// A `BatchedFn` is a wrapper around a `handler` that provides the interface for
 /// evaluating a single input as part of a batch of other inputs.
 #[doc(hidden)]
-#[derive(Clone)]
 pub struct BatchedFn<T, R>
 where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    tx: Sender<(T, Sender<R>)>,
+    tx: Mutex<Sender<(T, UnboundedSender<R>)>>,
 }
 
 impl<T, R> BatchedFn<T, R>
@@ -344,10 +224,13 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
+    pub fn new(tx: Sender<(T, UnboundedSender<R>)>) -> Self {
+        Self { tx: Mutex::new(tx) }
+    }
     /// Evaluate a single input as part of a batch of other inputs.
     pub async fn evaluate_in_batch(&self, input: T) -> R {
-        let (result_tx, mut result_rx) = mpsc::channel::<R>(100);
-        self.tx.clone().send((input, result_tx)).await.unwrap();
+        let (result_tx, mut result_rx) = async_mpsc::unbounded_channel::<R>();
+        self.tx.lock().await.send((input, result_tx)).unwrap();
         result_rx.recv().await.unwrap()
     }
 }
@@ -356,23 +239,73 @@ where
 #[macro_export]
 macro_rules! __batch_fn_internal {
     (
-        |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block,
-        $( $setting:ident = $value:expr, )*
+        |$batch:ident: $batch_input_type:ty, $ctx:ident: &$ctx_type:ty| -> $batch_output_type:ty $fn_body:block,
+        max_batch_size = $max_batch_size:expr,
+        delay = $delay:expr,
     ) => {{
-        static BATCHED_FN: $crate::Lazy<$crate::BatchedFn<<$batch_input_type as $crate::Batch>::Item, <$batch_output_type as $crate::Batch>::Item>> =
-            $crate::Lazy::new(|| {
-                let mut builder = $crate::BatchedFnBuilder::new(
-                    |$batch: $batch_input_type| -> $batch_output_type { $fn_body }
-                );
+        static BATCHED_FN: $crate::Lazy<
+            $crate::BatchedFn<
+                <$batch_input_type as $crate::Batch>::Item,
+                <$batch_output_type as $crate::Batch>::Item,
+            >,
+        > = $crate::Lazy::new(|| {
+            let (tx, mut rx) = std::sync::mpsc::channel::<(
+                <$batch_input_type as $crate::Batch>::Item,
+                $crate::UnboundedSender<<$batch_output_type as $crate::Batch>::Item>,
+            )>();
 
-                $(
-                    builder = builder.$setting($value);
-                )*
+            std::thread::spawn(move || {
+                // Create handler closure.
+                let handler = |$batch: $batch_input_type, $ctx: &$ctx_type| -> $batch_output_type {
+                    $fn_body
+                };
 
-                builder.build()
+                // Initialize handler context.
+                let ctx = <$ctx_type as $crate::BatchedFnContext>::new();
+
+                // Wait for an input.
+                while let Ok((input, result_tx)) = rx.recv() {
+                    let mut batch_input =
+                        <$batch_input_type as $crate::Batch>::with_capacity($max_batch_size);
+                    let mut batch_txs = Vec::with_capacity($max_batch_size);
+                    batch_input.push(input);
+                    batch_txs.push(result_tx);
+
+                    let mut vacancy = $max_batch_size - 1;
+                    let mut time_left = $delay as u64;
+                    let start = std::time::Instant::now();
+
+                    // While there is still room in the batch we'll wait at most `delay`
+                    // milliseconds to try to fill it.
+                    while vacancy > 0 && time_left > 0 {
+                        if let Ok((next_input, next_result_tx)) =
+                            rx.recv_timeout(std::time::Duration::from_millis(time_left))
+                        {
+                            batch_input.push(next_input);
+                            batch_txs.push(next_result_tx);
+                            vacancy -= 1;
+                            let elapsed = start.elapsed().as_millis();
+                            time_left = if elapsed > $delay {
+                                0
+                            } else {
+                                ($delay - elapsed) as u64
+                            };
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let batch_output = handler(batch_input, &ctx);
+                    for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
+                        result_tx.send(output).unwrap();
+                    }
+                }
             });
 
-        |input| { BATCHED_FN.evaluate_in_batch(input) }
+            $crate::BatchedFn::new(tx)
+        });
+
+        |input| BATCHED_FN.evaluate_in_batch(input)
     }};
 }
 
@@ -380,7 +313,7 @@ macro_rules! __batch_fn_internal {
 ///
 /// This macro has 3 parameters. The first parameter must be the batch `handler` closure.
 /// This is where the actual logic goes for handling a batch of inputs. The two other parameters
-/// are both optional and must be given by name: `delay` and `max_batch_size`.
+/// are must be given by name: `delay` and `max_batch_size`.
 ///
 /// ## `delay`
 ///
@@ -394,19 +327,47 @@ macro_rules! __batch_fn_internal {
 #[macro_export]
 macro_rules! batched_fn {
     (
-        |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block $(,)?
+        |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block,
+        max_batch_size = $max_batch_size:expr,
+        delay = $delay:expr $(,)?
     ) => {
         $crate::__batch_fn_internal!(
-            |$batch: $batch_input_type| -> $batch_output_type $fn_body,
+            |$batch: $batch_input_type, _ctx: &$crate::EmptyContext| -> $batch_output_type $fn_body,
+            max_batch_size = $max_batch_size,
+            delay = $delay,
         );
     };
     (
         |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block,
-        $( $setting:ident = $value:expr ),* $(,)?
+        delay = $delay:expr,
+        max_batch_size = $max_batch_size:expr $(,)?
     ) => {
         $crate::__batch_fn_internal!(
-            |$batch: $batch_input_type| -> $batch_output_type $fn_body,
-            $( $setting = $value, )*
+            |$batch: $batch_input_type, _ctx: &$crate::EmptyContext| -> $batch_output_type $fn_body,
+            max_batch_size = $max_batch_size,
+            delay = $delay,
+        );
+    };
+    (
+        |$batch:ident: $batch_input_type:ty, $ctx:ident: &$ctx_type:ty| -> $batch_output_type:ty $fn_body:block,
+        max_batch_size = $max_batch_size:expr,
+        delay = $delay:expr $(,)?
+    ) => {
+        $crate::__batch_fn_internal!(
+            |$batch: $batch_input_type, $ctx: &$ctx_type| -> $batch_output_type $fn_body,
+            max_batch_size = $max_batch_size,
+            delay = $delay,
+        );
+    };
+    (
+        |$batch:ident: $batch_input_type:ty, $ctx:ident: &$ctx_type:ty| -> $batch_output_type:ty $fn_body:block,
+        delay = $delay:expr,
+        max_batch_size = $max_batch_size:expr $(,)?
+    ) => {
+        $crate::__batch_fn_internal!(
+            |$batch: $batch_input_type, $ctx: &$ctx_type| -> $batch_output_type $fn_body,
+            max_batch_size = $max_batch_size,
+            delay = $delay,
         );
     };
 }
