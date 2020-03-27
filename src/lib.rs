@@ -214,79 +214,9 @@ where
     }
 }
 
-/// Macro for creating a batched function.
-///
-/// This macro has 3 parameters: [`handler`](#handler), [`config`](#config), and
-/// [`context`](#context).
-///
-/// # Parameters
-///
-/// ### `handler`
-///
-/// The handler must be in the form of a closure declaration that takes a batch
-/// and any number of references to objects in the context as input and
-/// returns a different type of batch.
-///
-/// ### `config`
-///
-/// Within the config you must specify the `max_batch_size` and `delay`.
-///
-/// The batched function will wait at most `delay` milliseconds after receiving a single
-/// input to fill a batch of size `max_batch_size`. If enough inputs to fill a full batch
-/// are not received within `delay` milliseconds then the partial batch will be ran as-is.
-///
-/// ## `context`
-///
-/// Any additional reference that the handler takes as input must be defined within
-/// the context.
-///
-/// # Examples
-///
-/// ```rust
-/// # #[macro_use] extern crate batched_fn;
-/// # use batched_fn::batched_fn;
-/// async fn double(x: i32) -> i32 {
-///     let batched_double = batched_fn! {
-///         handler = |batch: Vec<i32>| -> Vec<i32> {
-///             batch.into_iter().map(|x| x*2).collect()
-///         };
-///         config = {
-///             max_batch_size: 4,
-///             delay: 50,
-///         };
-///         context = {};
-///     };
-///
-///     batched_double(x).await
-/// }
-/// ```
-///
-/// You can also provide an arbitrary number of additional arguments to the handler by reference.
-/// All of the objects have to be initialized in the [`context`](#context):
-///
-/// ```rust
-/// # #[macro_use] extern crate batched_fn;
-/// # use batched_fn::batched_fn;
-///
-/// async fn multiply(x: i32) -> i32 {
-///     let batched_multiply = batched_fn! {
-///         handler = |batch: Vec<i32>, factor: &i32| -> Vec<i32> {
-///             batch.into_iter().map(|x| *factor * x ).collect()
-///         };
-///         config = {
-///             max_batch_size: 4,
-///             delay: 50,
-///         };
-///         context = {
-///             factor: 3,
-///         };
-///     };
-///
-///     batched_multiply(x).await
-/// }
-/// ```
+#[doc(hidden)]
 #[macro_export]
-macro_rules! batched_fn {
+macro_rules! __batched_fn_internal {
     (
         handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
         config = {
@@ -371,4 +301,153 @@ macro_rules! batched_fn {
 
         |input| BATCHED_FN.evaluate_in_batch(input)
     }};
+
+}
+
+/// Macro for creating a batched function.
+///
+/// This macro has 3 parameters: [`handler`](#handler), [`config`](#config), and
+/// [`context`](#context).
+///
+/// # Parameters
+///
+/// ### `handler`
+///
+/// The handler must be in the form of a closure declaration that takes a batch
+/// and any number of references to objects in the context as input and
+/// returns a different type of batch.
+///
+/// ### `config`
+///
+/// Within the config you must specify the `max_batch_size` and `delay`.
+///
+/// The batched function will wait at most `delay` milliseconds after receiving a single
+/// input to fill a batch of size `max_batch_size`. If enough inputs to fill a full batch
+/// are not received within `delay` milliseconds then the partial batch will be ran as-is.
+///
+/// ## `context`
+///
+/// Any additional reference that the handler takes as input must be defined within
+/// the context.
+///
+/// # Examples
+///
+/// ```rust
+/// # #[macro_use] extern crate batched_fn;
+/// # use batched_fn::batched_fn;
+/// async fn double(x: i32) -> i32 {
+///     let batched_double = batched_fn! {
+///         handler = |batch: Vec<i32>| -> Vec<i32> {
+///             batch.into_iter().map(|x| x*2).collect()
+///         };
+///         config = {
+///             max_batch_size: 4,
+///             delay: 50,
+///         };
+///     };
+///
+///     batched_double(x).await
+/// }
+/// ```
+///
+/// You can also provide an arbitrary number of additional arguments to the handler by reference.
+/// All of the objects have to be initialized in the [`context`](#context):
+///
+/// ```rust
+/// # #[macro_use] extern crate batched_fn;
+/// # use batched_fn::batched_fn;
+///
+/// async fn multiply(x: i32) -> i32 {
+///     let batched_multiply = batched_fn! {
+///         handler = |batch: Vec<i32>, factor: &i32| -> Vec<i32> {
+///             batch.into_iter().map(|x| *factor * x ).collect()
+///         };
+///         config = {
+///             max_batch_size: 4,
+///             delay: 50,
+///         };
+///         context = {
+///             factor: 3,
+///         };
+///     };
+///
+///     batched_multiply(x).await
+/// }
+/// ```
+#[macro_export]
+macro_rules! batched_fn {
+    (
+        handler = |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            max_batch_size: $max_batch_size:expr,
+            delay: $delay:expr $(,)?
+        } $(;)?
+    ) => {
+        $crate::__batched_fn_internal!(
+            handler = |$batch: $batch_input_type| -> $batch_output_type $fn_body ;
+            config = {
+                max_batch_size: $max_batch_size,
+                delay: $delay,
+            };
+            context = {};
+        );
+    };
+    (
+        handler = |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            delay: $delay:expr,
+            max_batch_size: $max_batch_size:expr $(,)?
+        } $(;)?
+    ) => {
+        $crate::__batched_fn_internal!(
+            handler = |$batch: $batch_input_type| -> $batch_output_type $fn_body ;
+            config = {
+                max_batch_size: $max_batch_size,
+                delay: $delay,
+            };
+            context = {};
+        );
+    };
+    (
+        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            max_batch_size: $max_batch_size:expr,
+            delay: $delay:expr $(,)?
+        };
+        context = {
+            $( $ctx:ident: $ctx_init:expr ),* $(,)?
+        } $(;)?
+    ) => {
+        $crate::__batched_fn_internal!(
+            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body ;
+            config = {
+                max_batch_size: $max_batch_size,
+                delay: $delay,
+            };
+            context = {
+                $( $ctx: $ctx_init, )*
+            };
+        );
+    };
+    (
+        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
+        config = {
+            delay: $delay:expr,
+            max_batch_size: $max_batch_size:expr $(,)?
+        };
+        context = {
+            $( $ctx:ident: $ctx_init:expr ),* $(,)?
+        } $(;)?
+    ) => {
+        $crate::__batched_fn_internal!(
+            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body ;
+            config = {
+                max_batch_size: $max_batch_size,
+                delay: $delay,
+            };
+            context = {
+                $( $ctx: $ctx_init, )*
+            };
+        );
+    };
 }
