@@ -187,10 +187,6 @@ impl<T> Batch for Vec<T> {
     }
 }
 
-#[doc(hidden)]
-#[derive(Default)]
-pub struct EmptyContext {}
-
 /// A `BatchedFn` is a wrapper around a `handler` that provides the interface for
 /// evaluating a single input as part of a batch of other inputs.
 #[doc(hidden)]
@@ -323,11 +319,11 @@ macro_rules! batched_fn {
                 let delay: u128 = $delay;
 
                 // Initialize handler context.
-                struct Context {
+                struct _Context {
                     $( $ctx_arg: $ctx_arg_ty, )*
                 }
 
-                let context = Context {
+                let context = _Context {
                     $( $ctx: $ctx_init, )*
                 };
 
