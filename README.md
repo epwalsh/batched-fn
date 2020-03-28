@@ -1,7 +1,7 @@
 <div align="center">
     <h1>batched-fn</h1>
-    A Rust macro for creating batched functions that can be called with a single input.</br></br>
-    This makes it easy to serve deep learning models with batched inference through a web server
+    A Rust macro for creating batched functions that can be called with a single input,
+    making it easy to serve deep learning models with batched inference through a web server
     or <a href="https://github.com/rusty-celery/rusty-celery">Celery worker<a>.
 </div>
 <br/>
