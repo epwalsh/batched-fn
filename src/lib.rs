@@ -141,17 +141,14 @@
 //! running a batch it invokes the callback corresponding to each input with the corresponding output,
 //! which triggers the closure to wake up and return the output.
 
+extern crate flume;
 extern crate once_cell;
-extern crate tokio;
 
+#[doc(hidden)]
+pub use flume::{unbounded as channel, Sender};
+use futures::lock::Mutex;
 #[doc(hidden)]
 pub use once_cell::sync::Lazy;
-
-#[doc(hidden)]
-pub use tokio::sync::{mpsc::UnboundedSender, Mutex};
-
-use std::sync::mpsc::Sender;
-use tokio::sync::mpsc as async_mpsc;
 
 /// The `Batch` trait is essentially an abstraction of `Vec<T>`. The input and output of a batch
 /// [`handler`](macro.batched_fn.html#handler) must implement `Batch`.
@@ -195,7 +192,7 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    tx: Mutex<Sender<(T, UnboundedSender<R>)>>,
+    tx: Mutex<Sender<(T, Sender<R>)>>,
 }
 
 impl<T, R> BatchedFn<T, R>
@@ -203,14 +200,25 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    pub fn new(tx: Sender<(T, UnboundedSender<R>)>) -> Self {
+    pub fn new(tx: Sender<(T, Sender<R>)>) -> Self {
         Self { tx: Mutex::new(tx) }
     }
+
     /// Evaluate a single input as part of a batch of other inputs.
+    ///
+    /// ### Panics
+    ///
+    /// This function panics if the handler thread has crashed.
     pub async fn evaluate_in_batch(&self, input: T) -> R {
-        let (result_tx, mut result_rx) = async_mpsc::unbounded_channel::<R>();
-        self.tx.lock().await.send((input, result_tx)).unwrap();
-        result_rx.recv().await.unwrap()
+        let (result_tx, mut result_rx) = channel::<R>();
+        if self.tx.lock().await.send((input, result_tx)).is_err() {
+            panic!("Batched handler receiver has been dropped, handler thread may have crashed");
+        }
+        if let Ok(result) = result_rx.recv_async().await {
+            result
+        } else {
+            panic!("Batched handler channel disconnected, handler thread may have crashed");
+        }
     }
 }
 
@@ -233,9 +241,9 @@ macro_rules! __batched_fn_internal {
                 <$batch_output_type as $crate::Batch>::Item,
             >,
         > = $crate::Lazy::new(|| {
-            let (tx, mut rx) = std::sync::mpsc::channel::<(
+            let (tx, mut rx) = $crate::channel::<(
                 <$batch_input_type as $crate::Batch>::Item,
-                $crate::UnboundedSender<<$batch_output_type as $crate::Batch>::Item>,
+                $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
             )>();
 
             std::thread::spawn(move || {
@@ -291,7 +299,7 @@ macro_rules! __batched_fn_internal {
 
                     let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
                     for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
-                        result_tx.send(output).unwrap();
+                        result_tx.send(output).expect("Channel from calling thread disconnected");
                     }
                 }
             });
