@@ -148,10 +148,24 @@ extern crate tokio;
 pub use once_cell::sync::Lazy;
 
 #[doc(hidden)]
-pub use tokio::sync::{mpsc::UnboundedSender, Mutex};
+#[cfg(not(feature = "fast"))]
+pub use std::sync::mpsc;
 
-use std::sync::mpsc::Sender;
-use tokio::sync::mpsc as async_mpsc;
+#[doc(hidden)]
+#[cfg(not(feature = "fast"))]
+pub use std::sync::mpsc::channel;
+
+#[doc(hidden)]
+#[cfg(feature = "fast")]
+pub use flume as mpsc;
+
+#[doc(hidden)]
+#[cfg(feature = "fast")]
+pub use flume::unbounded as channel;
+
+use tokio::sync::mpsc::unbounded_channel as async_channel;
+#[doc(hidden)]
+pub use tokio::sync::{mpsc::UnboundedSender, Mutex};
 
 /// The `Batch` trait is essentially an abstraction of `Vec<T>`. The input and output of a batch
 /// [`handler`](macro.batched_fn.html#handler) must implement `Batch`.
@@ -195,7 +209,7 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    tx: Mutex<Sender<(T, UnboundedSender<R>)>>,
+    tx: Mutex<mpsc::Sender<(T, UnboundedSender<R>)>>,
 }
 
 impl<T, R> BatchedFn<T, R>
@@ -203,12 +217,12 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    pub fn new(tx: Sender<(T, UnboundedSender<R>)>) -> Self {
+    pub fn new(tx: mpsc::Sender<(T, UnboundedSender<R>)>) -> Self {
         Self { tx: Mutex::new(tx) }
     }
     /// Evaluate a single input as part of a batch of other inputs.
     pub async fn evaluate_in_batch(&self, input: T) -> R {
-        let (result_tx, mut result_rx) = async_mpsc::unbounded_channel::<R>();
+        let (result_tx, mut result_rx) = async_channel::<R>();
         self.tx.lock().await.send((input, result_tx)).unwrap();
         result_rx.recv().await.unwrap()
     }
@@ -233,7 +247,7 @@ macro_rules! __batched_fn_internal {
                 <$batch_output_type as $crate::Batch>::Item,
             >,
         > = $crate::Lazy::new(|| {
-            let (tx, mut rx) = std::sync::mpsc::channel::<(
+            let (tx, mut rx) = $crate::channel::<(
                 <$batch_input_type as $crate::Batch>::Item,
                 $crate::UnboundedSender<<$batch_output_type as $crate::Batch>::Item>,
             )>();

@@ -43,37 +43,72 @@ jobs:
         command: fmt
         args: -- --check
 
-    - name: Lint with Clippy
+    - name: Lint with Clippy (default features)
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: clippy
+        args: --all-targets -- -D warnings
+
+    - name: Lint with Clippy (all features)
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: clippy
         args: --all-targets --all-features -- -D warnings
 
-    - name: Run Unit Tests
+    - name: Run Unit Tests (default features)
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --lib
 
-    - name: Run Doc Tests
+    - name: Run Unit Tests (all features)
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --lib --all-features
+
+    - name: Run Doc Tests (default features)
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --doc
 
-    - name: Run Runtime Tests
+    - name: Run Doc Tests (all features)
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --doc --all-features
+
+    - name: Run Runtime Tests (default features)
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --test runtime
 
-    - name: Run Codegen Tests
+    - name: Run Runtime Tests (all features)
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --test runtime --all-features
+
+    - name: Run Codegen Tests (default features)
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --test codegen
+
+    - name: Run Codegen Tests (all features)
+      if: always()
+      uses: actions-rs/cargo@v1
+      with:
+        command: test
+        args: --test codegen --all-features
