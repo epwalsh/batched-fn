@@ -299,7 +299,7 @@ macro_rules! __batched_fn_internal {
 
                     let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
                     for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
-                        result_tx.send(output).unwrap();
+                        result_tx.send(output).expect("Channel from calling thread disconnected");
                     }
                 }
             });
