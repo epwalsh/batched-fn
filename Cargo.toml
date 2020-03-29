@@ -1,6 +1,6 @@
 [package]
 name = "batched-fn"
-version = "0.1.4"
+version = "0.1.5"
 authors = ["epwalsh <epwalsh10@gmail.com>"]
 edition = "2018"
 license = "Apache-2.0"
