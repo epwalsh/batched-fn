@@ -1,10 +1,10 @@
-//! `batched-fn` provides a macro that can be used to easily a wrap a function that runs on
+//! `batched-fn` provides a macro that can be used to easily wrap a function that runs on
 //! batches of inputs in such a way that it can be called with
 //! a single input, yet where that single input is run as part of a batch of other inputs behind
 //! the scenes.
 //!
 //! This is useful when you have a high throughput application where processing inputs in a batch
-//! is more efficient that processing inputs one-by-one. The trade-off  is a small delay that is incurred
+//! is more efficient that processing inputs one-by-one. The trade-off  is a small delay incurred
 //! while waiting for a batch to be filled, though this can be tuned with the
 //! [`delay`](macro.batched_fn.html#config) and [`max_batch_size`](macro.batched_fn.html#config)
 //! parameters.
@@ -201,6 +201,7 @@ impl Default for Config {
     }
 }
 
+/// Error types that can occur while calling a batched function.
 #[derive(Debug, Copy, Clone)]
 pub enum Error {
     /// Channel is full.
@@ -210,9 +211,10 @@ pub enum Error {
     Disconnected,
 }
 
-/// A `BatchedFn` is a wrapper around a `handler` that provides the interface for
-/// evaluating a single input as part of a batch of other inputs.
-#[doc(hidden)]
+/// Created by the [`batched_fn`](macro.batched_fn.html) macro.
+///
+/// A `BatchedFn` is a wrapper around a [`handler`](macro.batched_fn.html#handler)
+/// that provides the interface for evaluating a single input as part of a batch of other inputs.
 pub struct BatchedFn<T, R>
 where
     T: 'static + Send + Sync + std::fmt::Debug,
@@ -231,10 +233,6 @@ where
     }
 
     /// Evaluate a single input as part of a batch of other inputs.
-    ///
-    /// ### Panics
-    ///
-    /// This function panics if the handler thread has crashed.
     pub async fn evaluate_in_batch(&self, input: T) -> Result<R, Error> {
         // Can use `unbounded` channel because we already get backpressure from
         // the channel that `self.tx` sends to.
@@ -361,7 +359,8 @@ macro_rules! __batched_fn_internal {
 /// Macro for creating a batched function.
 ///
 /// This macro has 3 parameters: [`handler`](#handler), [`config`](#config), and
-/// [`context`](#context).
+/// [`context`](#context). It returns an async function that wraps
+/// [`BatchedFn::evaluate_in_batch`](struct.BatchedFn.html#method.evaluate_in_batch).
 ///
 /// # Parameters
 ///
@@ -380,7 +379,7 @@ macro_rules! __batched_fn_internal {
 /// are not received within `delay` milliseconds then the partial batch will be ran as-is.
 ///
 /// The `channel_cap` option allows you to apply back-pressure if too many inputs are waiting for
-/// the handler thread to accept another batch. By default `channel_cap` is None, but if
+/// the handler thread to accept another batch. By default `channel_cap` is `None`, but if
 /// set to `Some(usize)` then
 /// [`BatchedFn::evaluate_in_batch`](struct.BatchedFn.html#method.evaluate_in_batch) will
 /// return an error if the channel between the calling thread and the handler thread is at this
@@ -395,8 +394,9 @@ macro_rules! __batched_fn_internal {
 ///
 /// ```rust
 /// # #[macro_use] extern crate batched_fn;
-/// # use batched_fn::batched_fn;
-/// async fn double(x: i32) -> i32 {
+/// use batched_fn::{batched_fn, Error};
+///
+/// async fn double(x: i32) -> Result<i32, Error> {
 ///     let batched_double = batched_fn! {
 ///         handler = |batch: Vec<i32>| -> Vec<i32> {
 ///             batch.into_iter().map(|x| x*2).collect()
@@ -409,7 +409,7 @@ macro_rules! __batched_fn_internal {
 ///         context = {};
 ///     };
 ///
-///     batched_double(x).await.unwrap()
+///     batched_double(x).await
 /// }
 /// ```
 ///
@@ -418,9 +418,8 @@ macro_rules! __batched_fn_internal {
 ///
 /// ```rust
 /// # #[macro_use] extern crate batched_fn;
-/// # use batched_fn::batched_fn;
-///
-/// async fn multiply(x: i32) -> i32 {
+/// # use batched_fn::{batched_fn, Error};
+/// async fn multiply(x: i32) -> Result<i32, Error> {
 ///     let batched_multiply = batched_fn! {
 ///         handler = |batch: Vec<i32>, factor: &i32| -> Vec<i32> {
 ///             batch.into_iter().map(|x| *factor * x ).collect()
@@ -434,7 +433,7 @@ macro_rules! __batched_fn_internal {
 ///         };
 ///     };
 ///
-///     batched_multiply(x).await.unwrap()
+///     batched_multiply(x).await
 /// }
 /// ```
 #[macro_export]
