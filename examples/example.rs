@@ -45,7 +45,7 @@ async fn predict_for_single_input(input: Input) -> Output {
             model: Model::load(),
         };
     };
-    batch_predict(input).await
+    batch_predict(input).await.unwrap()
 }
 
 #[tokio::main]

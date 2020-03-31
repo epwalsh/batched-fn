@@ -106,7 +106,7 @@
 //!             model: Model::load(),
 //!         };
 //!     };
-//!     batch_predict(input).await
+//!     batch_predict(input).await.unwrap()
 //! }
 //! ```
 //!
@@ -145,7 +145,7 @@ extern crate flume;
 extern crate once_cell;
 
 #[doc(hidden)]
-pub use flume::{unbounded as channel, Sender};
+pub use flume::{bounded, unbounded, Sender};
 use futures::lock::Mutex;
 #[doc(hidden)]
 pub use once_cell::sync::Lazy;
@@ -184,6 +184,32 @@ impl<T> Batch for Vec<T> {
     }
 }
 
+#[doc(hidden)]
+pub struct Config {
+    pub max_batch_size: usize,
+    pub delay: u128,
+    pub channel_cap: Option<usize>,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            max_batch_size: 8,
+            delay: 50,
+            channel_cap: None,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub enum Error {
+    /// Channel is full.
+    Full,
+
+    /// Channel has been disconnected, most likely due to the handler thread crashing.
+    Disconnected,
+}
+
 /// A `BatchedFn` is a wrapper around a `handler` that provides the interface for
 /// evaluating a single input as part of a batch of other inputs.
 #[doc(hidden)]
@@ -209,16 +235,22 @@ where
     /// ### Panics
     ///
     /// This function panics if the handler thread has crashed.
-    pub async fn evaluate_in_batch(&self, input: T) -> R {
-        let (result_tx, mut result_rx) = channel::<R>();
-        if self.tx.lock().await.send((input, result_tx)).is_err() {
-            panic!("Batched handler receiver has been dropped, handler thread may have crashed");
-        }
-        if let Ok(result) = result_rx.recv_async().await {
-            result
-        } else {
-            panic!("Batched handler channel disconnected, handler thread may have crashed");
-        }
+    pub async fn evaluate_in_batch(&self, input: T) -> Result<R, Error> {
+        // Can use `unbounded` channel because we already get backpressure from
+        // the channel that `self.tx` sends to.
+        let (result_tx, mut result_rx) = unbounded::<R>();
+        self.tx
+            .lock()
+            .await
+            .try_send((input, result_tx))
+            .map_err(|e| match e {
+                flume::TrySendError::Full(_) => Error::Full,
+                flume::TrySendError::Disconnected(_) => Error::Disconnected,
+            })?;
+        result_rx
+            .recv_async()
+            .await
+            .map_err(|_| Error::Disconnected)
     }
 }
 
@@ -228,8 +260,7 @@ macro_rules! __batched_fn_internal {
     (
         handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
         config = {
-            max_batch_size: $max_batch_size:expr,
-            delay: $delay:expr $(,)?
+            $( $cfg:ident: $cfg_init:expr ),* $(,)?
         };
         context = {
             $( $ctx:ident: $ctx_init:expr ),* $(,)?
@@ -241,10 +272,25 @@ macro_rules! __batched_fn_internal {
                 <$batch_output_type as $crate::Batch>::Item,
             >,
         > = $crate::Lazy::new(|| {
-            let (tx, mut rx) = $crate::channel::<(
-                <$batch_input_type as $crate::Batch>::Item,
-                $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
-            )>();
+            let config = $crate::Config {
+                $( $cfg: $cfg_init, )*
+                ..Default::default()
+            };
+
+            let (tx, mut rx) = match config.channel_cap {
+                None => {
+                    $crate::unbounded::<(
+                        <$batch_input_type as $crate::Batch>::Item,
+                        $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
+                    )>()
+                }
+                Some(cap) => {
+                    $crate::bounded::<(
+                        <$batch_input_type as $crate::Batch>::Item,
+                        $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
+                    )>(cap)
+                }
+            };
 
             std::thread::spawn(move || {
                 // Create handler closure.
@@ -253,8 +299,8 @@ macro_rules! __batched_fn_internal {
                 };
 
                 // Set config vars.
-                let max_batch_size: usize = $max_batch_size;
-                let delay: u128 = $delay;
+                let max_batch_size: usize = config.max_batch_size;
+                let delay: u128 = config.delay;
 
                 // Initialize handler context.
                 struct _Context {
@@ -327,11 +373,18 @@ macro_rules! __batched_fn_internal {
 ///
 /// ### `config`
 ///
-/// Within the config you must specify the `max_batch_size` and `delay`.
+/// Within the config you can specify the `max_batch_size`, `delay`, and `channel_cap`.
 ///
 /// The batched function will wait at most `delay` milliseconds after receiving a single
 /// input to fill a batch of size `max_batch_size`. If enough inputs to fill a full batch
 /// are not received within `delay` milliseconds then the partial batch will be ran as-is.
+///
+/// The `channel_cap` option allows you to apply back-pressure if too many inputs are waiting for
+/// the handler thread to accept another batch. By default `channel_cap` is None, but if
+/// set to `Some(usize)` then
+/// [`BatchedFn::evaluate_in_batch`](struct.BatchedFn.html#method.evaluate_in_batch) will
+/// return an error if the channel between the calling thread and the handler thread is at this
+/// capacity.
 ///
 /// ## `context`
 ///
@@ -351,10 +404,12 @@ macro_rules! __batched_fn_internal {
 ///         config = {
 ///             max_batch_size: 4,
 ///             delay: 50,
+///             channel_cap: Some(20),
 ///         };
+///         context = {};
 ///     };
 ///
-///     batched_double(x).await
+///     batched_double(x).await.unwrap()
 /// }
 /// ```
 ///
@@ -372,55 +427,22 @@ macro_rules! __batched_fn_internal {
 ///         };
 ///         config = {
 ///             max_batch_size: 4,
-///             delay: 50,
+///             delay: 50
 ///         };
 ///         context = {
-///             factor: 3,
+///             factor: 3
 ///         };
 ///     };
 ///
-///     batched_multiply(x).await
+///     batched_multiply(x).await.unwrap()
 /// }
 /// ```
 #[macro_export]
 macro_rules! batched_fn {
     (
-        handler = |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block ;
-        config = {
-            max_batch_size: $max_batch_size:expr,
-            delay: $delay:expr $(,)?
-        } $(;)?
-    ) => {
-        $crate::__batched_fn_internal!(
-            handler = |$batch: $batch_input_type| -> $batch_output_type $fn_body ;
-            config = {
-                max_batch_size: $max_batch_size,
-                delay: $delay,
-            };
-            context = {};
-        );
-    };
-    (
-        handler = |$batch:ident: $batch_input_type:ty| -> $batch_output_type:ty $fn_body:block ;
-        config = {
-            delay: $delay:expr,
-            max_batch_size: $max_batch_size:expr $(,)?
-        } $(;)?
-    ) => {
-        $crate::__batched_fn_internal!(
-            handler = |$batch: $batch_input_type| -> $batch_output_type $fn_body ;
-            config = {
-                max_batch_size: $max_batch_size,
-                delay: $delay,
-            };
-            context = {};
-        );
-    };
-    (
         handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
         config = {
-            max_batch_size: $max_batch_size:expr,
-            delay: $delay:expr $(,)?
+            $( $cfg:ident: $cfg_init:expr ),* $(,)?
         };
         context = {
             $( $ctx:ident: $ctx_init:expr ),* $(,)?
@@ -429,29 +451,7 @@ macro_rules! batched_fn {
         $crate::__batched_fn_internal!(
             handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body ;
             config = {
-                max_batch_size: $max_batch_size,
-                delay: $delay,
-            };
-            context = {
-                $( $ctx: $ctx_init, )*
-            };
-        );
-    };
-    (
-        handler = |$batch:ident: $batch_input_type:ty $(, $ctx_arg:ident: &$ctx_arg_ty:ty )*| -> $batch_output_type:ty $fn_body:block ;
-        config = {
-            delay: $delay:expr,
-            max_batch_size: $max_batch_size:expr $(,)?
-        };
-        context = {
-            $( $ctx:ident: $ctx_init:expr ),* $(,)?
-        } $(;)?
-    ) => {
-        $crate::__batched_fn_internal!(
-            handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type $fn_body ;
-            config = {
-                max_batch_size: $max_batch_size,
-                delay: $delay,
+                $( $cfg: $cfg_init, )*
             };
             context = {
                 $( $ctx: $ctx_init, )*

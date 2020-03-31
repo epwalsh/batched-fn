@@ -22,7 +22,8 @@ async fn double(x: i32) -> i32 {
         };
         context = {};
     };
-    batched(x).await
+
+    batched(x).await.unwrap()
 }
 
 #[tokio::test]

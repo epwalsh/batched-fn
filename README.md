@@ -101,7 +101,7 @@ async fn predict_for_http_request(input: Input) -> Output {
             model: Model::load(),
         };
     };
-    batch_predict(input).await
+    batch_predict(input).await.unwrap()
 }
 ```
 
