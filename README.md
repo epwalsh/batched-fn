@@ -21,13 +21,13 @@
 </p>
 <br/>
 
-`batched-fn` provides a macro that can be used to easily a wrap a function that runs on
+`batched-fn` provides a macro that can be used to easily wrap a function that runs on
 batches of inputs in such a way that it can be called with
 a single input, yet where that single input is run as part of a batch of other inputs behind
 the scenes.
 
 This is useful when you have a high throughput application where processing inputs in a batch
-is more efficient that processing inputs one-by-one. The trade-off  is a small delay that is incurred
+is more efficient that processing inputs one-by-one. The trade-off  is a small delay incurred
 while waiting for a batch to be filled, though this can be tuned with the
 `delay` and `max_batch_size` parameters.
 
@@ -101,7 +101,7 @@ async fn predict_for_http_request(input: Input) -> Output {
             model: Model::load(),
         };
     };
-    batch_predict(input).await
+    batch_predict(input).await.unwrap()
 }
 ```
 
