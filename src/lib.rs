@@ -189,6 +189,9 @@ pub struct Config {
     pub max_batch_size: usize,
     pub delay: u128,
     pub channel_cap: Option<usize>,
+    // Used to avoid clippy linting errors within the macro-generated code
+    // when updating the fields of this struct.
+    pub _phantom: std::marker::PhantomData<bool>,
 }
 
 impl Default for Config {
@@ -197,6 +200,7 @@ impl Default for Config {
             max_batch_size: 8,
             delay: 50,
             channel_cap: None,
+            _phantom: std::marker::PhantomData,
         }
     }
 }
