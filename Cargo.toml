@@ -9,7 +9,7 @@ repository = "https://github.com/epwalsh/batched-fn"
 homepage = "https://github.com/epwalsh/batched-fn"
 description = "Middleware for serving deep learning models with batched prediction"
 keywords = ["deep-learning", "batched-prediction", "middleware", "backpressure"]
-categories = ["science", "web-programming::http-server", "asyncronous"]
+categories = ["science", "web-programming::http-server", "asynchronous"]
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
