@@ -1,13 +1,15 @@
 [package]
 name = "batched-fn"
-version = "0.1.8"
+version = "0.1.9"
 authors = ["epwalsh <epwalsh10@gmail.com>"]
 edition = "2018"
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/epwalsh/batched-fn"
 homepage = "https://github.com/epwalsh/batched-fn"
-description = "A macro for batched processing"
+description = "Middleware for serving deep learning models with batched prediction"
+keywords = ["deep-learning", "batched-prediction", "middleware", "backpressure"]
+categories = ["science", "web-programming::http-server", "asyncronous"]
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]

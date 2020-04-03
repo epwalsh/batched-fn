@@ -1,21 +1,24 @@
-//! `batched-fn` provides a macro that can be used to easily wrap a function that runs on
-//! batches of inputs in such a way that it can be called with
-//! a single input, yet where that single input is run as part of a batch of other inputs behind
-//! the scenes.
+//! Deep learning models are usually implemented to make efficient use of a GPU by batching inputs together
+//! in "mini-batches". However, applications serving these models often receive requests one-by-one.
+//! So using a conventional single or multi-threaded server approach will under-utilize the GPU and lead to latency that increases
+//! linearly with the volume of requests.
 //!
-//! This is useful when you have a high throughput application where processing inputs in a batch
-//! is more efficient that processing inputs one-by-one. The trade-off  is a small delay incurred
-//! while waiting for a batch to be filled, though this can be tuned with the
-//! [`delay`](macro.batched_fn.html#config) and [`max_batch_size`](macro.batched_fn.html#config)
-//! parameters.
+//! `batched-fn` is middleware for deep learning services that queues individual requests and provides them as a batch
+//! to your model. It can be added to any application with minimal refactoring simply by inserting the [`batched_fn!`](macro.batched_fn.html)
+//! macro into the function that runs requests through the model.
+//! The trade-off is a small delay incurred while waiting for a batch to be filled,
+//! though this can be [tuned](#tuning-max-batch-size-and-delay) with the `delay` and `max_batch_size` [config parameters](macro.batched_fn.html#config).
 //!
-//! A typical use-case is when you have a GPU-backed deep learning model deployed on a webserver that provides
-//! a prediction for each input that comes in through an HTTP request.
+//! # Features
 //!
-//! Even though inputs come individually - and outputs need to be served back individually - it
-//! is usually more efficient to process a group of inputs together in order to fully utilize the GPU.
+//! - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
+//! - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
+//! - 🙌 Easy to tune: simply adjust `delay` and `max_batch_size`.
+//! - 🛑 [Back-pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](macro.batched_fn.html#config).
 //!
-//! In this case the model API might look like this:
+//! # Examples
+//!
+//! Suppose you have a model API that look like this:
 //!
 //! ```rust
 //! // `Batch` could be anything that implements the `batched_fn::Batch` trait.
@@ -48,8 +51,8 @@
 //! }
 //! ```
 //!
-//! Without `batched-fn`, the webserver route would need to call `Model::predict` on each
-//! individual input which would result in a bottleneck from under-utilizing the GPU:
+//! Without `batched-fn` a webserver route would need to call `Model::predict` on each
+//! individual input, resulting in a bottleneck from under-utilizing the GPU:
 //!
 //! ```rust
 //! use once_cell::sync::Lazy;
@@ -75,7 +78,7 @@
 //! }
 //! ```
 //!
-//! But by dropping the [`batched_fn`](macro.batched_fn.html) macro into this function, you automatically get batched
+//! But by dropping the [`batched_fn`](macro.batched_fn.html) macro into your code you automatically get batched
 //! inference behind the scenes without changing the one-to-one relationship between inputs and
 //! outputs:
 //!
