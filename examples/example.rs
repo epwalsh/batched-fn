@@ -39,7 +39,7 @@ async fn predict_for_single_input(input: Input) -> Output {
         };
         config = {
             max_batch_size: 4,
-            delay: 50,
+            max_delay: 50,
         };
         context = {
             model: Model::load(),

@@ -7,13 +7,13 @@
 //! to your model. It can be added to any application with minimal refactoring simply by inserting the [`batched_fn!`](macro.batched_fn.html)
 //! macro into the function that runs requests through the model.
 //! The trade-off is a small delay incurred while waiting for a batch to be filled,
-//! though this can be [tuned](#tuning-max-batch-size-and-delay) with the `delay` and `max_batch_size` [config parameters](macro.batched_fn.html#config).
+//! though this can be [tuned](#tuning-max-batch-size-and-delay) with the `max_delay` and `max_batch_size` [config parameters](macro.batched_fn.html#config).
 //!
 //! # Features
 //!
 //! - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 //! - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
-//! - 🙌 Easy to tune: simply adjust `delay` and `max_batch_size`.
+//! - 🙌 Easy to tune: simply adjust `max_delay` and `max_batch_size`.
 //! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](macro.batched_fn.html#config).
 //!
 //! # Examples
@@ -103,7 +103,7 @@
 //!         };
 //!         config = {
 //!             max_batch_size: 16,
-//!             delay: 50,
+//!             max_delay: 50,
 //!         };
 //!         context = {
 //!             model: Model::load(),
@@ -115,21 +115,21 @@
 //!
 //! ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 //!
-//! Here we set the [`max_batch_size`](macro.batch.html#config) to 16 and [`delay`](macro.batched_fn.html#config)
+//! Here we set the [`max_batch_size`](macro.batch.html#config) to 16 and [`max_delay`](macro.batched_fn.html#config)
 //! to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 //! input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 //! then the partial batch will be ran as-is.
 //!
-//! # Tuning max batch size and delay
+//! # Tuning max batch size and max delay
 //!
 //! The optimal batch size and delay will depend on the specifics of your use case, such as how big of a batch you can fit in memory
 //! (typically on the order of 8, 16, 32, or 64 for a deep learning model) and how long of a delay you can afford.
 //! In general you want to set both of these as high as you can.
 //!
 //! It's worth noting that the response time of your application might actually go *down* under high load.
-//! This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `delay` milliseconds
+//! This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `max_delay` milliseconds
 //! has passed, whichever happens first.
-//! So under high load batches will be filled quickly, but under low load the response time will be at least `delay` milliseconds (adding the time
+//! So under high load batches will be filled quickly, but under low load the response time will be at least `max_delay` milliseconds (adding the time
 //! it takes to actually process a batch and respond).
 //!
 //! # Implementation details
@@ -190,7 +190,7 @@ impl<T> Batch for Vec<T> {
 #[doc(hidden)]
 pub struct Config {
     pub max_batch_size: usize,
-    pub delay: u128,
+    pub max_delay: u128,
     pub channel_cap: Option<usize>,
     // Used to avoid clippy linting errors within the macro-generated code
     // when updating the fields of this struct.
@@ -201,7 +201,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             max_batch_size: 8,
-            delay: 50,
+            max_delay: 50,
             channel_cap: None,
             _phantom: std::marker::PhantomData,
         }
@@ -305,7 +305,7 @@ macro_rules! __batched_fn_internal {
 
                 // Set config vars.
                 let max_batch_size: usize = config.max_batch_size;
-                let delay: u128 = config.delay;
+                let max_delay: u128 = config.max_delay;
 
                 // Initialize handler context.
                 struct _Context {
@@ -325,10 +325,10 @@ macro_rules! __batched_fn_internal {
                     batch_txs.push(result_tx);
 
                     let mut vacancy = max_batch_size - 1;
-                    let mut time_left = delay as u64;
+                    let mut time_left = max_delay as u64;
                     let start = std::time::Instant::now();
 
-                    // While there is still room in the batch we'll wait at most `delay`
+                    // While there is still room in the batch we'll wait at most `max_delay`
                     // milliseconds to try to fill it.
                     while vacancy > 0 && time_left > 0 {
                         if let Ok((next_input, next_result_tx)) =
@@ -338,10 +338,10 @@ macro_rules! __batched_fn_internal {
                             batch_txs.push(next_result_tx);
                             vacancy -= 1;
                             let elapsed = start.elapsed().as_millis();
-                            time_left = if elapsed > delay {
+                            time_left = if elapsed > max_delay {
                                 0
                             } else {
-                                (delay - elapsed) as u64
+                                (max_delay - elapsed) as u64
                             };
                         } else {
                             break;
@@ -379,11 +379,11 @@ macro_rules! __batched_fn_internal {
 ///
 /// ### `config`
 ///
-/// Within the config you can specify the `max_batch_size`, `delay`, and `channel_cap`.
+/// Within the config you can specify the `max_batch_size`, `max_delay`, and `channel_cap`.
 ///
-/// The batched function will wait at most `delay` milliseconds after receiving a single
+/// The batched function will wait at most `max_delay` milliseconds after receiving a single
 /// input to fill a batch of size `max_batch_size`. If enough inputs to fill a full batch
-/// are not received within `delay` milliseconds then the partial batch will be ran as-is.
+/// are not received within `max_delay` milliseconds then the partial batch will be ran as-is.
 ///
 /// The `channel_cap` option allows you to apply back pressure if too many inputs are waiting for
 /// the handler thread to accept another batch. By default `channel_cap` is `None`, but if
@@ -410,7 +410,7 @@ macro_rules! __batched_fn_internal {
 ///         };
 ///         config = {
 ///             max_batch_size: 4,
-///             delay: 50,
+///             max_delay: 50,
 ///             channel_cap: Some(20),
 ///         };
 ///         context = {};
@@ -433,7 +433,7 @@ macro_rules! __batched_fn_internal {
 ///         };
 ///         config = {
 ///             max_batch_size: 4,
-///             delay: 50
+///             max_delay: 50
 ///         };
 ///         context = {
 ///             factor: 3

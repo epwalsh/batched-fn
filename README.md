@@ -27,13 +27,13 @@ linearly with the volume of requests.
 `batched-fn` is middleware for deep learning services that queues individual requests and provides them as a batch
 to your model. It can be added to any application with minimal refactoring simply by inserting the `batched_fn!` macro
 into the function that runs requests through the model. The trade-off is a small delay incurred while waiting for a batch to be filled,
-though this can be [tuned](#tuning-max-batch-size-and-delay) with the `delay` and `max_batch_size` [config parameters](https://docs.rs/batched-fn/*/batched_fn/macro.batched_fn.html#config).
+though this can be [tuned](#tuning-max-batch-size-and-delay) with the `max_delay` and `max_batch_size` [config parameters](https://docs.rs/batched-fn/*/batched_fn/macro.batched_fn.html#config).
 
 ## Features
 
 - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
-- 🙌 Easy to tune: simply adjust `delay` and `max_batch_size`.
+- 🙌 Easy to tune: simply adjust `max_delay` and `max_batch_size`.
 - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](https://docs.rs/batched-fn/*/batched_fn/macro.batched_fn.html#config).
 
 ## Examples
@@ -96,7 +96,7 @@ async fn predict_for_http_request(input: Input) -> Output {
         };
         config = {
             max_batch_size: 16,
-            delay: 50,
+            max_delay: 50,
         };
         context = {
             model: Model::load(),
@@ -108,19 +108,19 @@ async fn predict_for_http_request(input: Input) -> Output {
 
 ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 
-Here we set the `max_batch_size` to 16 and `delay`
+Here we set the `max_batch_size` to 16 and `max_delay`
 to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 then the partial batch will be ran as-is.
 
-## Tuning max batch size and delay
+## Tuning max batch size and max delay
 
 The optimal batch size and delay will depend on the specifics of your use case, such as how big of a batch you can fit in memory
 (typically on the order of 8, 16, 32, or 64 for a deep learning model) and how long of a delay you can afford.
 In general you want to set both of these as high as you can.
 
 It's worth noting that the response time of your application might actually go *down* under high load.
-This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `delay` milliseconds
+This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `max_delay` milliseconds
 has passed, whichever happens first.
-So under high load batches will be filled quickly, but under low load the response time will be at least `delay` milliseconds (adding the time
+So under high load batches will be filled quickly, but under low load the response time will be at least `max_delay` milliseconds (adding the time
 it takes to actually process a batch and respond).
