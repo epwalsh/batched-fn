@@ -34,7 +34,7 @@ though this can be [tuned](#tuning-max-batch-size-and-delay) with the `delay` an
 - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
 - 🙌 Easy to tune: simply adjust `delay` and `max_batch_size`.
-- 🛑 [Back-pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](https://docs.rs/batched-fn/*/batched_fn/macro.batched_fn.html#config).
+- 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](https://docs.rs/batched-fn/*/batched_fn/macro.batched_fn.html#config).
 
 ## Examples
 

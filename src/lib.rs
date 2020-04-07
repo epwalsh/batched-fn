@@ -14,7 +14,7 @@
 //! - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 //! - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
 //! - 🙌 Easy to tune: simply adjust `delay` and `max_batch_size`.
-//! - 🛑 [Back-pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](macro.batched_fn.html#config).
+//! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](macro.batched_fn.html#config).
 //!
 //! # Examples
 //!
@@ -385,7 +385,7 @@ macro_rules! __batched_fn_internal {
 /// input to fill a batch of size `max_batch_size`. If enough inputs to fill a full batch
 /// are not received within `delay` milliseconds then the partial batch will be ran as-is.
 ///
-/// The `channel_cap` option allows you to apply back-pressure if too many inputs are waiting for
+/// The `channel_cap` option allows you to apply back pressure if too many inputs are waiting for
 /// the handler thread to accept another batch. By default `channel_cap` is `None`, but if
 /// set to `Some(usize)` then
 /// [`BatchedFn::evaluate_in_batch`](struct.BatchedFn.html#method.evaluate_in_batch) will
