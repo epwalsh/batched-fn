@@ -18,7 +18,7 @@ fn test_basic_invocation() {
         handler = |batch: Vec<i32>| -> Vec<i32> { batch_double(batch) };
         config = {
             max_batch_size: 4,
-            delay: 50,
+            max_delay: 50,
         };
         context = {};
     };
@@ -30,7 +30,7 @@ fn test_with_context() {
         handler = |batch: Vec<i32>, factor: &i32| -> Vec<i32> { batch_multiply(batch, *factor) };
         config = {
             max_batch_size: 4,
-            delay: 50,
+            max_delay: 50,
         };
         context = {
             factor: 3,

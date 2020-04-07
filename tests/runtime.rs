@@ -18,7 +18,7 @@ async fn double(x: i32) -> i32 {
         };
         config = {
             max_batch_size: 4,
-            delay: 50,
+            max_delay: 50,
         };
         context = {};
     };
