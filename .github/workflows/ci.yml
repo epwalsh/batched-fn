@@ -17,61 +17,67 @@ jobs:
     steps:
     - uses: actions/checkout@v1
 
-    - name: Install Rust Stable
+    - name: Install rust stable
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         components: rustfmt, clippy
         override: true
 
-    - name: Cache Cargo Registry
+    - name: Fix ~/.cargo directory permissions
+      run: |
+        # Need to chown ~/.cargo or else the "Cache cargo registry" step will fail.
+        # See https://github.com/actions/cache/issues/133.
+        sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+
+    - name: Cache cargo registry
       uses: actions/cache@v1
       with:
         path: ~/.cargo/registry
         key: ${{ runner.os }}-cargo-test-registry-${{ hashFiles('**/Cargo.toml') }}
 
-    - name: Cache Cargo Build
+    - name: Cache cargo build
       uses: actions/cache@v1
       with:
         path: target
         key: ${{ runner.os }}-cargo-test-build-${{ hashFiles('**/Cargo.toml') }}
 
-    - name: Lint with RustFmt
+    - name: Lint with rustfmt
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: fmt
         args: -- --check
 
-    - name: Lint with Clippy
+    - name: Lint with clippy
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: clippy
         args: --all-targets -- -D warnings
 
-    - name: Run Unit Tests
+    - name: Run unit tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --lib
 
-    - name: Run Doc Tests
+    - name: Run doc tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --doc
 
-    - name: Run Runtime Tests
+    - name: Run runtime tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
         command: test
         args: --test runtime
 
-    - name: Run Codegen Tests
+    - name: Run codegen tests
       if: always()
       uses: actions-rs/cargo@v1
       with:
