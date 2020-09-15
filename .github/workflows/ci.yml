@@ -13,9 +13,12 @@ on:
 jobs:
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v2
 
     - name: Install rust stable
       uses: actions-rs/toolchain@v1
@@ -24,23 +27,23 @@ jobs:
         components: rustfmt, clippy
         override: true
 
-    - name: Fix ~/.cargo directory permissions
+    - name: Set build variables
       run: |
-        # Need to chown ~/.cargo or else the "Cache cargo registry" step will fail.
-        # See https://github.com/actions/cache/issues/133.
-        sudo chown -R $(whoami):$(id -ng) ~/.cargo/
+        # We use these variables as part of the cache keys.
+        echo "::set-env name=RUST_VERSION::$(rustc --version)"
+        echo "::set-env name=CARGO_VERSION::$(cargo --version)"
 
     - name: Cache cargo registry
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-test-registry-${{ hashFiles('**/Cargo.toml') }}
+        key: cargo registry ${{ github.job }} ${{ runner.os }} ${{ env.RUST_VERSION }} ${{ env.CARGO_VERSION }} ${{ hashFiles('**/Cargo.toml') }}
 
     - name: Cache cargo build
-      uses: actions/cache@v1
+      uses: actions/cache@v2
       with:
         path: target
-        key: ${{ runner.os }}-cargo-test-build-${{ hashFiles('**/Cargo.toml') }}
+        key: cargo build ${{ github.job }} ${{ runner.os }} ${{ env.RUST_VERSION }} ${{ env.CARGO_VERSION }} ${{ hashFiles('**/Cargo.toml') }}
 
     - name: Lint with rustfmt
       if: always()
