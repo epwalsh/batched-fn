@@ -243,7 +243,7 @@ where
     pub async fn evaluate_in_batch(&self, input: T) -> Result<R, Error> {
         // Can use `unbounded` channel because we already get backpressure from
         // the channel that `self.tx` sends to.
-        let (result_tx, mut result_rx) = unbounded::<R>();
+        let (result_tx, result_rx) = unbounded::<R>();
         self.tx
             .lock()
             .await
