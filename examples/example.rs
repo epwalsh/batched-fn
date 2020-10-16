@@ -58,7 +58,7 @@ async fn main() {
     }));
 
     // Pause for a moment before firing off some more tasks.
-    time::delay_for(Duration::from_millis(10)).await;
+    time::sleep(Duration::from_millis(10)).await;
 
     for i in 1..10 {
         handles.push(tokio::spawn(async move {
