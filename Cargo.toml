@@ -27,4 +27,4 @@ flume = "0.10.0"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 
 [dev-dependencies]
-tokio = { version = "0.3.0", features = ["time", "rt", "rt-multi-thread", "macros"] }
+tokio = { version = "1.0.0", features = ["time", "rt", "rt-multi-thread", "macros"] }
