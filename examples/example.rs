@@ -50,12 +50,10 @@ async fn predict_for_single_input(input: Input) -> Output {
 
 #[tokio::main]
 async fn main() {
-    let mut handles = vec![];
-
-    handles.push(tokio::spawn(async move {
+    let mut handles = vec![tokio::spawn(async move {
         let o = predict_for_single_input(0).await;
         println!("0 -> {}", o);
-    }));
+    })];
 
     // Pause for a moment before firing off some more tasks.
     time::sleep(Duration::from_millis(10)).await;
