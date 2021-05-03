@@ -28,11 +28,9 @@ async fn double(x: i32) -> i32 {
 
 #[tokio::test]
 async fn test_runtime() {
-    let mut handles = vec![];
-
-    handles.push(tokio::spawn(async move {
+    let mut handles = vec![tokio::spawn(async move {
         double(0).await;
-    }));
+    })];
 
     // Pause for a moment before firing off some more tasks.
     time::sleep(Duration::from_millis(10)).await;
