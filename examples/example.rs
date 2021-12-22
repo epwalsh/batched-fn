@@ -19,7 +19,7 @@ type Output = i32;
 
 struct Model {}
 
-// This is our stupid model that just doubles the inputs.
+// This is our silly model that just doubles the inputs.
 impl Model {
     fn predict(&self, batch: Batch<Input>) -> Batch<Output> {
         batch.iter().map(|input| input * 2).collect()
