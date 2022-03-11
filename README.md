@@ -1,6 +1,6 @@
 <div align="center">
     <h1>batched-fn</h1>
-    Rust middleware for serving deep learning models with batched prediction.
+    Rust server plugin for deploying deep learning models with batched prediction.
 </div>
 <br/>
 <p align="center">
@@ -19,23 +19,30 @@
 </p>
 <br/>
 
+<!--
+DO NOT EDIT BELOW THIS POINT BY HAND!
+
+Everything below this point is automatically generated using cargo-rdme: https://github.com/orium/cargo-rdme
+Just run `make readme` to update.
+-->
+
+<!-- cargo-rdme start -->
+
 Deep learning models are usually implemented to make efficient use of a GPU by batching inputs together
 in "mini-batches". However, applications serving these models often receive requests one-by-one.
 So using a conventional single or multi-threaded server approach will under-utilize the GPU and lead to latency that increases
 linearly with the volume of requests.
 
-`batched-fn` is middleware for deep learning services that queues individual requests and provides them as a batch
-to your model. It can be added to any application with minimal refactoring simply by inserting the [`batched_fn!`](macro.batched_fn.html)
+`batched-fn` is a drop-in solution for deep learning webservers that queues individual requests and provides them as a batch
+to your model. It can be added to any application with minimal refactoring simply by inserting the [`batched_fn`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html)
 macro into the function that runs requests through the model.
-The trade-off is a small delay incurred while waiting for a batch to be filled,
-though this can be [tuned](#tuning-max-batch-size-and-delay) with the `max_delay` and `max_batch_size` [config parameters](macro.batched_fn.html#config).
 
 ## Features
 
 - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
-- 🙌 Easy to tune: simply adjust `max_delay` and `max_batch_size`.
-- 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](macro.batched_fn.html#config).
+- 🙌 Easy to tune: simply adjust [`max_delay`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config) and [`max_batch_size`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config).
+- 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set [`channel_cap`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config).
 
 ## Examples
 
@@ -62,12 +69,10 @@ struct Model {
 impl Model {
     fn predict(&self, batch: Batch<Input>) -> Batch<Output> {
         // ...
-        # batch.iter().map(|_| Output {}).collect()
     }
 
     fn load() -> Self {
         // ...
-        # Self {}
     }
 }
 ```
@@ -86,7 +91,7 @@ fn predict_for_http_request(input: Input) -> Output {
 }
 ```
 
-But by dropping the [`batched_fn`](macro.batched_fn.html) macro into your code you automatically get batched
+But by dropping the [`batched_fn`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html) macro into your code you automatically get batched
 inference behind the scenes without changing the one-to-one relationship between inputs and
 outputs:
 
@@ -110,7 +115,7 @@ async fn predict_for_http_request(input: Input) -> Output {
 
 ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 
-Here we set the [`max_batch_size`](macro.batch.html#config) to 16 and [`max_delay`](macro.batched_fn.html#config)
+Here we set the [`max_batch_size`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config) to 16 and [`max_delay`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config)
 to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 then the partial batch will be ran as-is.
@@ -126,11 +131,13 @@ handler function to process a batch.
 ## Implementation details
 
 When the `batched_fn` macro is invoked it spawns a new thread where the
-[`handler`](macro.batched_fn.html#hanlder) will
-be ran. Within that thread, every object specified in the [`context`](macro.batched_fn.html#context)
+[`handler`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#handler) will
+be ran. Within that thread, every object specified in the [`context`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#context)
 is initialized and then passed by reference to the handler each time it is run.
 
 The object returned by the macro is just a closure that sends a single input and a callback
 through an asyncronous channel to the handler thread. When the handler finishes
 running a batch it invokes the callback corresponding to each input with the corresponding output,
 which triggers the closure to wake up and return the output.
+
+<!-- cargo-rdme end -->
