@@ -21,8 +21,6 @@ def main():
             return
         elif line.startswith("## [v"):
             break
-    else:
-        raise RuntimeError("Couldn't find 'Unreleased' section")
 
     lines.insert(insert_index, "\n")
     lines.insert(

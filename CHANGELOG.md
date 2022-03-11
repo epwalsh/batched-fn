@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## [v0.2.3](https://github.com/epwalsh/batched-fn/releases/tag/v0.2.3) - 2022-03-11
+
 ### Changed
 
 - Minor updates to documentation and CI.
