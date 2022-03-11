@@ -8,7 +8,7 @@ readme = "README.md"
 repository = "https://github.com/epwalsh/batched-fn"
 homepage = "https://github.com/epwalsh/batched-fn"
 description = "Middleware for serving deep learning models with batched prediction"
-keywords = ["deep-learning", "batched-prediction", "middleware", "backpressure"]
+keywords = ["deep-learning", "batched-prediction", "backpressure", "server"]
 categories = ["science", "web-programming::http-server", "asynchronous"]
 
 [package.metadata.docs.rs]

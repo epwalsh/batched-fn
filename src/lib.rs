@@ -3,20 +3,18 @@
 //! So using a conventional single or multi-threaded server approach will under-utilize the GPU and lead to latency that increases
 //! linearly with the volume of requests.
 //!
-//! `batched-fn` is middleware for deep learning services that queues individual requests and provides them as a batch
-//! to your model. It can be added to any application with minimal refactoring simply by inserting the [`batched_fn!`](macro.batched_fn.html)
+//! `batched-fn` is a drop-in solution for deep learning webservers that queues individual requests and provides them as a batch
+//! to your model. It can be added to any application with minimal refactoring simply by inserting the [`batched_fn`](crate::batched_fn)
 //! macro into the function that runs requests through the model.
-//! The trade-off is a small delay incurred while waiting for a batch to be filled,
-//! though this can be [tuned](#tuning-max-batch-size-and-delay) with the `max_delay` and `max_batch_size` [config parameters](macro.batched_fn.html#config).
 //!
-//! # Features
+//! ## Features
 //!
 //! - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 //! - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
-//! - 🙌 Easy to tune: simply adjust `max_delay` and `max_batch_size`.
-//! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set the `channel_cap` [config parameter](macro.batched_fn.html#config).
+//! - 🙌 Easy to tune: simply adjust [`max_delay`](crate::batched_fn#config) and [`max_batch_size`](crate::batched_fn#config).
+//! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set [`channel_cap`](crate::batched_fn#config).
 //!
-//! # Examples
+//! ## Examples
 //!
 //! Suppose you have a model API that look like this:
 //!
@@ -78,7 +76,7 @@
 //! }
 //! ```
 //!
-//! But by dropping the [`batched_fn`](macro.batched_fn.html) macro into your code you automatically get batched
+//! But by dropping the [`batched_fn`](crate::batched_fn) macro into your code you automatically get batched
 //! inference behind the scenes without changing the one-to-one relationship between inputs and
 //! outputs:
 //!
@@ -115,28 +113,24 @@
 //!
 //! ❗️ *Note that the `predict_for_http_request` function now has to be `async`.*
 //!
-//! Here we set the [`max_batch_size`](macro.batch.html#config) to 16 and [`max_delay`](macro.batched_fn.html#config)
+//! Here we set the [`max_batch_size`](crate::batched_fn#config) to 16 and [`max_delay`](crate::batched_fn#config)
 //! to 50 milliseconds. This means the batched function will wait at most 50 milliseconds after receiving a single
 //! input to fill a batch of 16. If 15 more inputs are not received within 50 milliseconds
 //! then the partial batch will be ran as-is.
 //!
-//! # Tuning max batch size and max delay
+//! ## Tuning max batch size and max delay
 //!
 //! The optimal batch size and delay will depend on the specifics of your use case, such as how big of a batch you can fit in memory
 //! (typically on the order of 8, 16, 32, or 64 for a deep learning model) and how long of a delay you can afford.
-//! In general you want to set both of these as high as you can.
+//! In general you want to set `max_batch_size` as high as you can, assuming the total processing time for `N` examples is minimized
+//! with a batch size of `N`, and keep `max_delay` small relative to the time it takes for your
+//! handler function to process a batch.
 //!
-//! It's worth noting that the response time of your application might actually go *down* under high load.
-//! This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `max_delay` milliseconds
-//! has passed, whichever happens first.
-//! So under high load batches will be filled quickly, but under low load the response time will be at least `max_delay` milliseconds (adding the time
-//! it takes to actually process a batch and respond).
-//!
-//! # Implementation details
+//! ## Implementation details
 //!
 //! When the `batched_fn` macro is invoked it spawns a new thread where the
-//! [`handler`](macro.batched_fn.html#hanlder) will
-//! be ran. Within that thread, every object specified in the [`context`](macro.batched_fn.html#context)
+//! [`handler`](crate::batched_fn#handler) will
+//! be ran. Within that thread, every object specified in the [`context`](crate::batched_fn#context)
 //! is initialized and then passed by reference to the handler each time it is run.
 //!
 //! The object returned by the macro is just a closure that sends a single input and a callback
@@ -154,7 +148,7 @@ use futures::lock::Mutex;
 pub use once_cell::sync::Lazy;
 
 /// The `Batch` trait is essentially an abstraction of `Vec<T>`. The input and output of a batch
-/// [`handler`](macro.batched_fn.html#handler) must implement `Batch`.
+/// [`handler`](crate::batched_fn#handler) must implement `Batch`.
 ///
 /// It represents an owned collection of ordered items of a single type.
 pub trait Batch: IntoIterator<Item = <Self as Batch>::Item> {
@@ -218,9 +212,9 @@ pub enum Error {
     Disconnected,
 }
 
-/// Created by the [`batched_fn`](macro.batched_fn.html) macro.
+/// Created by the [`batched_fn`](crate::batched_fn) macro.
 ///
-/// A `BatchedFn` is a wrapper around a [`handler`](macro.batched_fn.html#handler)
+/// A `BatchedFn` is a wrapper around a [`handler`](crate::batched_fn#handler)
 /// that provides the interface for evaluating a single input as part of a batch of other inputs.
 pub struct BatchedFn<T, R>
 where
