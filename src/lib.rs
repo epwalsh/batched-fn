@@ -124,13 +124,9 @@
 //!
 //! The optimal batch size and delay will depend on the specifics of your use case, such as how big of a batch you can fit in memory
 //! (typically on the order of 8, 16, 32, or 64 for a deep learning model) and how long of a delay you can afford.
-//! In general you want to set both of these as high as you can.
-//!
-//! It's worth noting that the response time of your application might actually go *down* under high load.
-//! This is because the batch handler will be called as soon as either a batch of `max_batch_size` is filled or `max_delay` milliseconds
-//! has passed, whichever happens first.
-//! So under high load batches will be filled quickly, but under low load the response time will be at least `max_delay` milliseconds (adding the time
-//! it takes to actually process a batch and respond).
+//! In general you want to set `max_batch_size` as high as you can, assuming the total processing time for `N` examples is minimized
+//! with a batch size of `N`, and keep `max_delay` small relative to the time it takes for your
+//! handler function to process a batch.
 //!
 //! # Implementation details
 //!
