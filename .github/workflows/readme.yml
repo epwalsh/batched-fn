@@ -35,7 +35,9 @@ jobs:
           set -e
           set -u
           set -o pipefail
-          CARGO_RDME_VERSION=$(cargo search --limit 1 cargo-rdme | grep cargo-rdme | head -n 1 | sed -E 's/cargo-rdme = "([^"]+)".*/v\1/g')
+          CARGO_RDME_VERSION=$(curl -s https://api.github.com/repos/orium/cargo-rdme/releases/latest | jq -r '.tag_name')
+          # Alternate method using cargo (takes longer):
+          # CARGO_RDME_VERSION=$(cargo search --limit 1 cargo-rdme | grep cargo-rdme | head -n 1 | sed -E 's/cargo-rdme = "([^"]+)".*/v\1/g')
           echo "CARGO_RDME_VERSION=$CARGO_RDME_VERSION" >> $GITHUB_ENV
           echo "$CARGO_RDME_VERSION"
 
