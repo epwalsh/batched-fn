@@ -12,7 +12,9 @@
 //! - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 //! - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
 //! - 🙌 Easy to tune: simply adjust [`max_delay`](crate::batched_fn#config) and [`max_batch_size`](crate::batched_fn#config).
-//! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set [`channel_cap`](crate::batched_fn#config).
+//! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included:
+//!   just set [`channel_cap`](crate::batched_fn#config) and handle
+//!   [`Error::Full`](crate::Error#variant.Full) by returning a 503 from your webserver.
 //!
 //! ## Examples
 //!
@@ -206,6 +208,10 @@ impl Default for Config {
 #[derive(Debug, Copy, Clone)]
 pub enum Error {
     /// Channel is full.
+    ///
+    /// This can happen if you've set `channel_cap`, and should usually be handled
+    /// by returning a 503 error code from your server to signal that the server is too
+    /// busy at the moment to handle any more requests.
     Full,
 
     /// Channel has been disconnected, most likely due to the handler thread crashing.
@@ -383,8 +389,8 @@ macro_rules! __batched_fn_internal {
 /// the handler thread to accept another batch. By default `channel_cap` is `None`, but if
 /// set to `Some(usize)` then
 /// [`BatchedFn::evaluate_in_batch`](struct.BatchedFn.html#method.evaluate_in_batch) will
-/// return an error if the channel between the calling thread and the handler thread is at this
-/// capacity.
+/// return [`Error::Full`](crate::Error#variant.Full) if the channel between the calling thread and the handler thread is at this
+/// capacity. You probably want to set this to some multiple of `max_batch_size`.
 ///
 /// ## `context`
 ///

@@ -42,7 +42,9 @@ macro into the function that runs requests through the model.
 - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
 - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
 - 🙌 Easy to tune: simply adjust [`max_delay`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config) and [`max_batch_size`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config).
-- 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included: just set [`channel_cap`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config).
+- 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included:
+  just set [`channel_cap`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config) and handle
+  [`Error::Full`](https://docs.rs/batched-fn/latest/batched_fn/enum.Error.html#variant.Full) by returning a 503 from your webserver.
 
 ## Examples
 
