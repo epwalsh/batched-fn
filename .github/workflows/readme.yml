@@ -53,7 +53,7 @@ jobs:
         run: |
           cargo install cargo-rdme
 
-      - name: Run cargo-rdme
+      - name: Check README is up-to-date
         run: |
           # If this step fails it means you haven't ran 'make readme' to update the README.
           cargo rdme --check
