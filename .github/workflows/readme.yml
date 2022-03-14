@@ -30,8 +30,12 @@ jobs:
           override: true
 
       - name: Find latest cargo-rdme version
+        shell: bash
         run: |
-          CARGO_RDME_VERSION=$(cargo search --limit 1 cargo-rdme | head -n 1 | sed -E 's/cargo-rdme = "([^"]+)".*/v\1/g')
+          set -e
+          set -u
+          set -o pipefail
+          CARGO_RDME_VERSION=$(cargo search --limit 1 cargo-rdme | grep cargo-rdme | head -n 1 | sed -E 's/cargo-rdme = "([^"]+)".*/v\1/g')
           echo "CARGO_RDME_VERSION=$CARGO_RDME_VERSION" >> $GITHUB_ENV
           echo "$CARGO_RDME_VERSION"
 
