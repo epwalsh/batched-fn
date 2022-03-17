@@ -7,7 +7,7 @@ type TestResult = (Vec<i32>, Vec<i32>);
 static TEST_RESULTS: Lazy<Mutex<Vec<TestResult>>> = Lazy::new(|| Mutex::new(vec![]));
 
 async fn double(x: i32) -> i32 {
-    let batched = batched_fn! {
+    let batch_handler = batched_fn! {
         handler = |batch: Vec<i32>| -> Vec<i32> {
             let mut out = Vec::with_capacity(batch.len());
             for x in &batch {
@@ -23,7 +23,7 @@ async fn double(x: i32) -> i32 {
         context = {};
     };
 
-    batched(x).await.unwrap()
+    batch_handler.evaluate_in_batch(x).await.unwrap()
 }
 
 #[tokio::test]

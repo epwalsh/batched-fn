@@ -31,21 +31,22 @@ impl Model {
 }
 
 async fn predict_for_single_input(input: Input) -> Output {
-    let batch_predict = batched_fn! {
+    let max_batch_size = if true { 4 } else { 8 };
+    let batched_predictor = batched_fn! {
         handler = |batch: Batch<Input>, model: &Model| -> Batch<Output> {
             let output = model.predict(batch.clone());
             println!("Processed batch {:?} -> {:?}", batch, output);
             output
         };
         config = {
-            max_batch_size: 4,
+            max_batch_size: max_batch_size,
             max_delay: 50,
         };
         context = {
             model: Model::load(),
         };
     };
-    batch_predict(input).await.unwrap()
+    batched_predictor.evaluate_in_batch(input).await.unwrap()
 }
 
 #[tokio::main]

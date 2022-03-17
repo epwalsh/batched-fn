@@ -109,7 +109,7 @@
 //!             model: Model::load(),
 //!         };
 //!     };
-//!     batch_predict(input).await.unwrap()
+//!     batch_predict.evaluate_in_batch(input).await.unwrap()
 //! }
 //! ```
 //!
@@ -146,8 +146,6 @@ extern crate once_cell;
 #[doc(hidden)]
 pub use flume::{bounded, unbounded, Sender};
 use futures::lock::Mutex;
-#[doc(hidden)]
-pub use once_cell::sync::Lazy;
 
 /// The `Batch` trait is essentially an abstraction of `Vec<T>`. The input and output of a batch
 /// [`handler`](crate::batched_fn#handler) must implement `Batch`.
@@ -227,6 +225,7 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
+    _worker_handle: std::thread::JoinHandle<()>,
     tx: Mutex<Sender<(T, Sender<R>)>>,
 }
 
@@ -235,8 +234,11 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    pub fn new(tx: Sender<(T, Sender<R>)>) -> Self {
-        Self { tx: Mutex::new(tx) }
+    pub fn new(worker_handle: std::thread::JoinHandle<()>, tx: Sender<(T, Sender<R>)>) -> Self {
+        Self {
+            _worker_handle: worker_handle,
+            tx: Mutex::new(tx),
+        }
     }
 
     /// Evaluate a single input as part of a batch of other inputs.
@@ -271,96 +273,86 @@ macro_rules! __batched_fn_internal {
             $( $ctx:ident: $ctx_init:expr ),* $(,)?
         } $(;)?
     ) => {{
-        static BATCHED_FN: $crate::Lazy<
-            $crate::BatchedFn<
-                <$batch_input_type as $crate::Batch>::Item,
-                <$batch_output_type as $crate::Batch>::Item,
-            >,
-        > = $crate::Lazy::new(|| {
-            let config = $crate::Config {
-                $( $cfg: $cfg_init, )*
-                ..Default::default()
+        let config = $crate::Config {
+            $( $cfg: $cfg_init, )*
+            ..Default::default()
+        };
+
+        let (tx, mut rx) = match config.channel_cap {
+            None => {
+                $crate::unbounded::<(
+                    <$batch_input_type as $crate::Batch>::Item,
+                    $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
+                )>()
+            }
+            Some(cap) => {
+                $crate::bounded::<(
+                    <$batch_input_type as $crate::Batch>::Item,
+                    $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
+                )>(cap)
+            }
+        };
+
+        let worker_handle = std::thread::spawn(move || {
+            // Create handler closure.
+            let handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type {
+                $fn_body
             };
 
-            let (tx, mut rx) = match config.channel_cap {
-                None => {
-                    $crate::unbounded::<(
-                        <$batch_input_type as $crate::Batch>::Item,
-                        $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
-                    )>()
-                }
-                Some(cap) => {
-                    $crate::bounded::<(
-                        <$batch_input_type as $crate::Batch>::Item,
-                        $crate::Sender<<$batch_output_type as $crate::Batch>::Item>,
-                    )>(cap)
-                }
+            // Set config vars.
+            let max_batch_size: usize = config.max_batch_size;
+            let max_delay: u128 = config.max_delay;
+
+            // Initialize handler context.
+            struct _Context {
+                $( $ctx_arg: $ctx_arg_ty, )*
+            }
+
+            let context = _Context {
+                $( $ctx: $ctx_init, )*
             };
 
-            std::thread::spawn(move || {
-                // Create handler closure.
-                let handler = |$batch: $batch_input_type $(, $ctx_arg: &$ctx_arg_ty )*| -> $batch_output_type {
-                    $fn_body
-                };
+            // Wait for an input.
+            while let Ok((input, result_tx)) = rx.recv() {
+                let mut batch_input =
+                    <$batch_input_type as $crate::Batch>::with_capacity(max_batch_size);
+                let mut batch_txs = Vec::with_capacity(max_batch_size);
+                batch_input.push(input);
+                batch_txs.push(result_tx);
 
-                // Set config vars.
-                let max_batch_size: usize = config.max_batch_size;
-                let max_delay: u128 = config.max_delay;
+                let mut vacancy = max_batch_size - 1;
+                let mut time_left = max_delay as u64;
+                let start = std::time::Instant::now();
 
-                // Initialize handler context.
-                struct _Context {
-                    $( $ctx_arg: $ctx_arg_ty, )*
-                }
-
-                let context = _Context {
-                    $( $ctx: $ctx_init, )*
-                };
-
-                // Wait for an input.
-                while let Ok((input, result_tx)) = rx.recv() {
-                    let mut batch_input =
-                        <$batch_input_type as $crate::Batch>::with_capacity(max_batch_size);
-                    let mut batch_txs = Vec::with_capacity(max_batch_size);
-                    batch_input.push(input);
-                    batch_txs.push(result_tx);
-
-                    let mut vacancy = max_batch_size - 1;
-                    let mut time_left = max_delay as u64;
-                    let start = std::time::Instant::now();
-
-                    // While there is still room in the batch we'll wait at most `max_delay`
-                    // milliseconds to try to fill it.
-                    while vacancy > 0 && time_left > 0 {
-                        if let Ok((next_input, next_result_tx)) =
-                            rx.recv_timeout(std::time::Duration::from_millis(time_left))
-                        {
-                            batch_input.push(next_input);
-                            batch_txs.push(next_result_tx);
-                            vacancy -= 1;
-                            let elapsed = start.elapsed().as_millis();
-                            time_left = if elapsed > max_delay {
-                                0
-                            } else {
-                                (max_delay - elapsed) as u64
-                            };
+                // While there is still room in the batch we'll wait at most `max_delay`
+                // milliseconds to try to fill it.
+                while vacancy > 0 && time_left > 0 {
+                    if let Ok((next_input, next_result_tx)) =
+                        rx.recv_timeout(std::time::Duration::from_millis(time_left))
+                    {
+                        batch_input.push(next_input);
+                        batch_txs.push(next_result_tx);
+                        vacancy -= 1;
+                        let elapsed = start.elapsed().as_millis();
+                        time_left = if elapsed > max_delay {
+                            0
                         } else {
-                            break;
-                        }
-                    }
-
-                    let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
-                    for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
-                        result_tx.send(output).expect("Channel from calling thread disconnected");
+                            (max_delay - elapsed) as u64
+                        };
+                    } else {
+                        break;
                     }
                 }
-            });
 
-            $crate::BatchedFn::new(tx)
+                let batch_output = handler(batch_input $(, &context.$ctx_arg )*);
+                for (output, mut result_tx) in batch_output.into_iter().zip(batch_txs) {
+                    result_tx.send(output).expect("Channel from calling thread disconnected");
+                }
+            }
         });
 
-        |input| BATCHED_FN.evaluate_in_batch(input)
+        $crate::BatchedFn::new(worker_handle, tx)
     }};
-
 }
 
 /// Macro for creating a batched function.
