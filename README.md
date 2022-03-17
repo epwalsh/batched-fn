@@ -39,7 +39,7 @@ macro into the function that runs requests through the model.
 
 ## Features
 
-- 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
+- 🚀 Easy to use: drop the [`batched_fn!`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html) macro into existing code.
 - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
 - 🙌 Easy to tune: simply adjust [`max_delay`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config) and [`max_batch_size`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#config).
 - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included:
@@ -93,7 +93,7 @@ fn predict_for_http_request(input: Input) -> Output {
 }
 ```
 
-But by dropping the [`batched_fn`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html) macro into your code you automatically get batched
+But by dropping the [`batched_fn!`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html) macro into your code you automatically get batched
 inference behind the scenes without changing the one-to-one relationship between inputs and
 outputs:
 
@@ -111,7 +111,7 @@ async fn predict_for_http_request(input: Input) -> Output {
             model: Model::load(),
         };
     };
-    batch_predict(input).await.unwrap()
+    batch_predict.evaluate_in_batch(input).await.unwrap()
 }
 ```
 
@@ -132,14 +132,15 @@ handler function to process a batch.
 
 ## Implementation details
 
-When the `batched_fn` macro is invoked it spawns a new thread where the
+When the [`batched_fn!`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html) macro is invoked it spawns a new thread where the
 [`handler`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#handler) will
 be ran. Within that thread, every object specified in the [`context`](https://docs.rs/batched-fn/latest/batched_fn/macro.batched_fn.html#context)
 is initialized and then passed by reference to the handler each time it is run.
 
-The object returned by the macro is just a closure that sends a single input and a callback
-through an asyncronous channel to the handler thread. When the handler finishes
-running a batch it invokes the callback corresponding to each input with the corresponding output,
-which triggers the closure to wake up and return the output.
+The object returned by the macro is just an instance of the [`BatchedFn`](https://docs.rs/batched-fn/latest/batched_fn/struct.BatchedFn.html)
+struct. When you call [`.evaluate_in_batch()`](https://docs.rs/batched-fn/latest/batched_fn/struct.BatchedFn.html#method.evaluate_in_batch) on this instance,
+it sends a single input and a callback through an asyncronous channel to the handler thread.
+When the handler finishes running a batch it invokes the callback corresponding to each input with the corresponding output,
+which triggers the calling thread to wake up and return the output.
 
 <!-- cargo-rdme end -->

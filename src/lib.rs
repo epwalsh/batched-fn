@@ -9,7 +9,7 @@
 //!
 //! ## Features
 //!
-//! - 🚀 Easy to use: drop the `batched_fn!` macro into existing code.
+//! - 🚀 Easy to use: drop the [`batched_fn!`](crate::batched_fn) macro into existing code.
 //! - 🔥 Lightweight and fast: queue system implemented on top of the blazingly fast [flume crate](https://github.com/zesterer/flume).
 //! - 🙌 Easy to tune: simply adjust [`max_delay`](crate::batched_fn#config) and [`max_batch_size`](crate::batched_fn#config).
 //! - 🛑 [Back pressure](https://medium.com/@jayphelps/backpressure-explained-the-flow-of-data-through-software-2350b3e77ce7) mechanism included:
@@ -78,7 +78,7 @@
 //! }
 //! ```
 //!
-//! But by dropping the [`batched_fn`](crate::batched_fn) macro into your code you automatically get batched
+//! But by dropping the [`batched_fn!`](crate::batched_fn) macro into your code you automatically get batched
 //! inference behind the scenes without changing the one-to-one relationship between inputs and
 //! outputs:
 //!
@@ -130,15 +130,16 @@
 //!
 //! ## Implementation details
 //!
-//! When the `batched_fn` macro is invoked it spawns a new thread where the
+//! When the [`batched_fn!`](crate::batched_fn) macro is invoked it spawns a new thread where the
 //! [`handler`](crate::batched_fn#handler) will
 //! be ran. Within that thread, every object specified in the [`context`](crate::batched_fn#context)
 //! is initialized and then passed by reference to the handler each time it is run.
 //!
-//! The object returned by the macro is just a closure that sends a single input and a callback
-//! through an asyncronous channel to the handler thread. When the handler finishes
-//! running a batch it invokes the callback corresponding to each input with the corresponding output,
-//! which triggers the closure to wake up and return the output.
+//! The object returned by the macro is just an instance of the [`BatchedFn`](crate::BatchedFn)
+//! struct. When you call [`.evaluate_in_batch()`](crate::BatchedFn#method.evaluate_in_batch) on this instance,
+//! it sends a single input and a callback through an asyncronous channel to the handler thread.
+//! When the handler finishes running a batch it invokes the callback corresponding to each input with the corresponding output,
+//! which triggers the calling thread to wake up and return the output.
 
 extern crate flume;
 extern crate once_cell;
@@ -358,8 +359,7 @@ macro_rules! __batched_fn_internal {
 /// Macro for creating a batched function.
 ///
 /// This macro has 3 parameters: [`handler`](#handler), [`config`](#config), and
-/// [`context`](#context). It returns an async function that wraps
-/// [`BatchedFn::evaluate_in_batch`](struct.BatchedFn.html#method.evaluate_in_batch).
+/// [`context`](#context). It returns an instance of async function [`BatchedFn`](crate::BatchedFn).
 ///
 /// # Parameters
 ///
@@ -408,7 +408,7 @@ macro_rules! __batched_fn_internal {
 ///         context = {};
 ///     };
 ///
-///     batched_double(x).await
+///     batched_double.evaluate_in_batch(x).await
 /// }
 /// ```
 ///
@@ -432,7 +432,7 @@ macro_rules! __batched_fn_internal {
 ///         };
 ///     };
 ///
-///     batched_multiply(x).await
+///     batched_multiply.evaluate_in_batch(x).await
 /// }
 /// ```
 #[macro_export]

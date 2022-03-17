@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- ⚠️ Breaking change ⚠️
+
+  The `batched_fn!` macro now returns a `BatchedFn` instance instead of a closure, which allows
+  us to avoid requiring static parameters to the macro.
+  It's a simple change to upgrade your codebase. If your code looked like this before:
+
+  ```rust
+  let batch_predictor = batched_fn! { ... };
+  return batch_predictor(input);
+  ```
+
+  You just need to change the last line to:
+
+  ```rust
+  return batch_predictor.evaluate_in_batch(input);
+  ```
+
 ## [v0.2.4](https://github.com/epwalsh/batched-fn/releases/tag/v0.2.4) - 2022-03-14
 
 ### Added
