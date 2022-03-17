@@ -31,7 +31,6 @@ impl Model {
 }
 
 async fn predict_for_single_input(input: Input) -> Output {
-    let max_batch_size = if true { 4 } else { 8 };
     let batched_predictor = batched_fn! {
         handler = |batch: Batch<Input>, model: &Model| -> Batch<Output> {
             let output = model.predict(batch.clone());
@@ -39,7 +38,7 @@ async fn predict_for_single_input(input: Input) -> Output {
             output
         };
         config = {
-            max_batch_size: max_batch_size,
+            max_batch_size: 4,
             max_delay: 50,
         };
         context = {
