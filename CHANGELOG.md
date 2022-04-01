@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Removed unnecessary `Mutex` in `BatchedFn`.
+
 ## [v0.2.4](https://github.com/epwalsh/batched-fn/releases/tag/v0.2.4) - 2022-03-14
 
 ### Added

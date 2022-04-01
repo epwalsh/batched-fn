@@ -145,7 +145,6 @@ extern crate once_cell;
 
 #[doc(hidden)]
 pub use flume::{bounded, unbounded, Sender};
-use futures::lock::Mutex;
 #[doc(hidden)]
 pub use once_cell::sync::Lazy;
 
@@ -227,7 +226,7 @@ where
     T: 'static + Send + Sync + std::fmt::Debug,
     R: 'static + Send + Sync + std::fmt::Debug,
 {
-    tx: Mutex<Sender<(T, Sender<R>)>>,
+    tx: Sender<(T, Sender<R>)>,
 }
 
 impl<T, R> BatchedFn<T, R>
@@ -236,7 +235,7 @@ where
     R: 'static + Send + Sync + std::fmt::Debug,
 {
     pub fn new(tx: Sender<(T, Sender<R>)>) -> Self {
-        Self { tx: Mutex::new(tx) }
+        Self { tx }
     }
 
     /// Evaluate a single input as part of a batch of other inputs.
@@ -244,14 +243,10 @@ where
         // Can use `unbounded` channel because we already get backpressure from
         // the channel that `self.tx` sends to.
         let (result_tx, result_rx) = unbounded::<R>();
-        self.tx
-            .lock()
-            .await
-            .try_send((input, result_tx))
-            .map_err(|e| match e {
-                flume::TrySendError::Full(_) => Error::Full,
-                flume::TrySendError::Disconnected(_) => Error::Disconnected,
-            })?;
+        self.tx.try_send((input, result_tx)).map_err(|e| match e {
+            flume::TrySendError::Full(_) => Error::Full,
+            flume::TrySendError::Disconnected(_) => Error::Disconnected,
+        })?;
         result_rx
             .recv_async()
             .await
