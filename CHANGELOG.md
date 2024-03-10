@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Removed unnecessary `Mutex` in `BatchedFn`.
+- Fixed issue where thread would crash when request from calling thread disconnects.
 
 ## [v0.2.4](https://github.com/epwalsh/batched-fn/releases/tag/v0.2.4) - 2022-03-14
 
